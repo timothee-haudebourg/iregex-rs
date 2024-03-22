@@ -6,7 +6,19 @@
 [![License](https://img.shields.io/crates/l/ere.svg?style=flat-square)](https://github.com/timothee-haudebourg/ere-rs#license)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/ere)
 
-<!-- cargo-rdme -->
+<!-- cargo-rdme start -->
+
+This library provides an implementation of the *POSIX Extended Regular
+Expression* (ERE) class of regular expressions, and nothing more.
+It also aims at providing easy tools to inspect finite automata built from
+regular expressions, or manually.
+
+If you are looking for more advanced regular expression, please use the
+[`regex`] library.
+
+[`regex`]: <https://github.com/rust-lang/regex>
+
+<!-- cargo-rdme end -->
 
 ## License
 

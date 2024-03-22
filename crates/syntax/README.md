@@ -1,6 +1,15 @@
 # POSIX Extended Regular Expression (ERE) parser for Rust
 
-<!-- cargo-rdme -->
+<!-- cargo-rdme start -->
+
+This library provides a parser for POSIX Extended Regular Expressions (ERE).
+Once parsed into an abstract syntax tree ([`Ast`]), regular expressions can
+then be compiled into a finite automaton running on Unicode scalar values
+([`char`] type) using the [`ere-automata`] library.
+
+[`ere-automata`]: <https://crates.io/crates/ere-automata>
+
+<!-- cargo-rdme end -->
 
 ## License
 
