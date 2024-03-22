@@ -6,7 +6,7 @@
 //! [`ere-automata`]: <https://crates.io/crates/ere-automata>
 use ere_automata::{RangeSet, DFA, NFA};
 use replace_with::replace_with_or_abort;
-use std::collections::HashMap;
+use std::{collections::HashMap, iter::Peekable};
 
 mod parsing;
 pub use parsing::*;
@@ -16,7 +16,23 @@ pub use display::*;
 
 /// Abstract syntax tree of an Extended Regular Expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Ast {
+pub struct Ast {
+	pub start_anchor: bool,
+	pub end_anchor: bool,
+	pub inner: UnanchoredAst
+}
+
+impl Ast {
+	pub fn empty() -> Self {
+		Self {
+			start_anchor: false,
+			end_anchor: false,
+			inner: UnanchoredAst::empty()
+		}
+	}
+}
+
+pub enum Atom {
 	/// Any character.
 	///
 	/// `.`
@@ -27,17 +43,20 @@ pub enum Ast {
 	/// `[]` or `[^ ]`
 	Set(RangeSet<char>),
 
-	/// Sequence.
-	Sequence(Vec<Self>),
-
 	/// Repetition.
 	Repeat(Box<Self>, u32, u32),
 
-	/// Union.
-	Union(Vec<Self>),
+	/// Capture group.
+	Group(Disjunction)
 }
 
-impl Ast {
+/// Regular expression atom sequence.
+pub struct Sequence(Vec<Atom>);
+
+/// Regular expression sequence disjunction.
+pub struct Disjunction(Vec<Sequence>);
+
+impl UnanchoredAst {
 	pub fn empty() -> Self {
 		Self::Sequence(Vec::new())
 	}

@@ -1,11 +1,28 @@
 use core::fmt;
+use std::fmt::Write;
 use ere_automata::AnyRange;
 
-use crate::Ast;
+use crate::{Ast, UnanchoredAst};
 
 const CHAR_COUNT: u64 = 0xd7ff + 0x10ffff - 0xe000;
 
-impl Ast {
+impl fmt::Display for Ast {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		if self.start_anchor {
+			f.write_char('^')?;
+		}
+
+		self.inner.fmt(f)?;
+
+		if self.end_anchor {
+			f.write_char('$')
+		} else {
+			Ok(())
+		}
+	}
+}
+
+impl UnanchoredAst {
 	/// Display this regular expression as a sub expression.
 	///
 	/// This will enclose it between parenthesis if necessary.
@@ -14,7 +31,7 @@ impl Ast {
 	}
 }
 
-impl fmt::Display for Ast {
+impl fmt::Display for UnanchoredAst {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Self::Any => write!(f, "."),
@@ -79,7 +96,7 @@ impl fmt::Display for Ast {
 /// Display the inner regular expression as a sub expression.
 ///
 /// This will enclose it between parenthesis if necessary.
-pub struct DisplaySub<'a>(&'a Ast);
+pub struct DisplaySub<'a>(&'a UnanchoredAst);
 
 impl<'a> fmt::Display for DisplaySub<'a> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
