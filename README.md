@@ -1,10 +1,10 @@
 # POSIX Extended Regular Expressions (ERE) for Rust
 
-[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/spruceid/linked-data-rs/ci.yml?style=flat-square&logo=github)](https://github.com/spruceid/linked-data-rs/actions)
-[![Crate informations](https://img.shields.io/crates/v/linked-data.svg?style=flat-square)](https://crates.io/crates/linked-data)
-[![Crates.io MSRV](https://img.shields.io/crates/msrv/linked-data?style=flat-square)](https://crates.io/crates/linked-data)
-[![License](https://img.shields.io/crates/l/linked-data.svg?style=flat-square)](https://github.com/spruceid/linked-data-rs#license)
-[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/linked-data)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/timothee-haudebourg/ere-rs/ci.yml?style=flat-square&logo=github)](https://github.com/timothee-haudebourg/ere-rs/actions)
+[![Crate informations](https://img.shields.io/crates/v/ere.svg?style=flat-square)](https://crates.io/crates/ere)
+[![Crates.io MSRV](https://img.shields.io/crates/msrv/ere?style=flat-square)](https://crates.io/crates/ere)
+[![License](https://img.shields.io/crates/l/ere.svg?style=flat-square)](https://github.com/timothee-haudebourg/ere-rs#license)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/ere)
 
 <!-- cargo-rdme -->
 
