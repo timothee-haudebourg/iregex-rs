@@ -1,11 +1,32 @@
 [package]
-name = "regex-automaton"
-version = "0.1.0"
-edition = "2021"
+name = "ere"
+description = "An implementation of POSIX Extended Regular Expressions."
+categories = ["text-processing"]
+readme = "README.md"
+documentation = "https://docs.rs/ere"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace.package]
+authors = ["Timothée Haudebourg <timothee@haudebourg.net>"]
+license = "MIT/Apache-2.0"
+repository = "https://github.com/timothee-haudebourg/ere-rs"
+edition = "2021"
+rust-version = "1.66.1"
+version = "0.1.0"
+
+[workspace]
+members = ["crates/*"]
+
+[workspace.dependencies]
+ere-automata = { version = "0.1.0", path = "crates/automata" }
+ere-syntax = { version = "0.1.0", path = "crates/syntax" }
+thiserror = "1.0.57"
 
 [dependencies]
-thiserror = "1.0.57"
-btree-range-map = "0.7.2"
-replace_with = "0.1.7"
+ere-automata.workspace = true
+ere-syntax.workspace = true

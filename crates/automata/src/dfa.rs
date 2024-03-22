@@ -1,18 +1,20 @@
-use std::{collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet}, hash::Hash};
+use std::{
+	collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
+	hash::Hash,
+};
 
 use btree_range_map::AnyRange;
 
-/// Deterministic epsilon-free automaton.
-#[derive(
-	Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash
-)]
-pub struct DetAutomaton<Q, L = AnyRange<char>> {
+/// Deterministic finite automaton.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DFA<Q, L = AnyRange<char>> {
 	initial_state: Q,
 	final_states: BTreeSet<Q>,
 	transitions: DetTransitions<Q, L>,
 }
 
-impl<Q, L> DetAutomaton<Q, L> {
+impl<Q, L> DFA<Q, L> {
+	/// Creates a new empty deterministic finite automaton.
 	pub fn new(initial_state: Q) -> Self {
 		Self {
 			initial_state,
@@ -21,6 +23,7 @@ impl<Q, L> DetAutomaton<Q, L> {
 		}
 	}
 
+	/// Creates a new DFA from its internal representation.
 	pub fn from_parts(
 		initial_state: Q,
 		final_states: BTreeSet<Q>,
@@ -29,32 +32,33 @@ impl<Q, L> DetAutomaton<Q, L> {
 		Self {
 			initial_state,
 			final_states,
-			transitions
+			transitions,
 		}
 	}
 
+	/// Returns the initial state of the automaton.
 	pub fn initial_state(&self) -> &Q {
 		&self.initial_state
 	}
 
+	/// Returns the final states of the automaton.
 	pub fn final_states(&self) -> &BTreeSet<Q> {
 		&self.final_states
 	}
 
-	pub fn final_states_mut(&mut self) -> &mut BTreeSet<Q> {
-		&mut self.final_states
-	}
-
+	/// Returns the transitions of the automaton.
 	pub fn transitions(&self) -> &BTreeMap<Q, BTreeMap<L, Q>> {
 		&self.transitions.0
 	}
 
+	/// Returns an iterator over all the states reachable from the given
+	/// starting state `q`.
 	pub fn reachable_states_from<'a>(&'a self, q: &'a Q) -> ReachableStates<'a, Q, L> {
 		ReachableStates::new(self, q)
 	}
 }
 
-impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
+impl<Q: Ord, L: Ord> DFA<Q, L> {
 	pub fn is_initial_state(&self, q: &Q) -> bool {
 		self.initial_state == *q
 	}
@@ -126,6 +130,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 		}
 	}
 
+	/// Creates a partition of the automaton's states.
 	pub fn partition<P, F>(&self, f: F) -> HashMap<P, BTreeSet<&Q>>
 	where
 		Q: Ord + Hash + Eq,
@@ -138,6 +143,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 		}
 	}
 
+	/// Creates a partition of the automaton's states.
 	pub fn try_partition<P, F, E>(&self, f: F) -> Result<HashMap<P, BTreeSet<&Q>>, E>
 	where
 		Q: Ord + Hash + Eq,
@@ -178,7 +184,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 	/// Minimizes the automaton.
 	// Hopcroft's algorithm.
 	// https://en.wikipedia.org/wiki/DFA_minimization
-	pub fn minimize<'a, P>(&'a self, partition: P) -> DetAutomaton<BTreeSet<&Q>, &L>
+	pub fn minimize<'a, P>(&'a self, partition: P) -> DFA<BTreeSet<&Q>, &L>
 	where
 		Q: Hash,
 		L: Hash,
@@ -239,7 +245,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 			}
 		}
 
-		let mut result = DetAutomaton::new(map[&self.initial_state].clone());
+		let mut result = DFA::new(map[&self.initial_state].clone());
 		for (source, transitions) in &self.transitions.0 {
 			for (range, target) in transitions {
 				result.add(map[source].clone(), range, map[target].clone());
@@ -249,11 +255,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 		result
 	}
 
-	pub fn map<P, M>(
-		&self,
-		mut f: impl FnMut(&Q) -> P,
-		mut g: impl FnMut(&L) -> M,
-	) -> DetAutomaton<P, M>
+	pub fn map<P, M>(&self, mut f: impl FnMut(&Q) -> P, mut g: impl FnMut(&L) -> M) -> DFA<P, M>
 	where
 		Q: Hash,
 		L: Hash,
@@ -266,7 +268,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 
 		let mut label_map = HashMap::new();
 
-		let mut result = DetAutomaton::new(mapped_initial_state);
+		let mut result = DFA::new(mapped_initial_state);
 		for (source, transitions) in &self.transitions.0 {
 			for (range, target) in transitions {
 				let source = map.entry(source).or_insert_with(|| f(source)).clone();
@@ -288,7 +290,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 		&self,
 		mut f: impl FnMut(&Q) -> Result<P, E>,
 		mut g: impl FnMut(&L) -> Result<M, E>,
-	) -> Result<DetAutomaton<P, M>, E>
+	) -> Result<DFA<P, M>, E>
 	where
 		Q: Hash,
 		L: Hash,
@@ -301,7 +303,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 
 		let mut label_map: HashMap<&L, M> = HashMap::new();
 
-		let mut result = DetAutomaton::new(mapped_initial_state);
+		let mut result = DFA::new(mapped_initial_state);
 		for (source, transitions) in &self.transitions.0 {
 			for (label, target) in transitions {
 				let source = match map.entry(source) {
@@ -328,10 +330,10 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 
 	pub fn product<'a, 'b, R, S, M, N>(
 		&'a self,
-		other: &'b DetAutomaton<R, M>,
+		other: &'b DFA<R, M>,
 		mut f: impl FnMut(&'a Q, &'b R) -> S,
 		mut g: impl FnMut(&'a L, &'b M) -> Option<N>,
-	) -> DetAutomaton<S, N>
+	) -> DFA<S, N>
 	where
 		R: Ord,
 		S: Clone + Ord + Hash,
@@ -345,7 +347,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 			&self.initial_state,
 			&other.initial_state,
 		));
-		let mut result = DetAutomaton::new(initial_state);
+		let mut result = DFA::new(initial_state);
 
 		let mut visited = HashSet::new();
 		while let Some((q, a, b)) = stack.pop() {
@@ -384,7 +386,16 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 		}
 	}
 
-	pub fn compress<M>(&self, append: impl Fn(&mut M, &L)) -> DetAutomaton<Q, M>
+	/// Compress the transitions of a the automaton.
+	///
+	/// # Example
+	///
+	/// ```
+	/// # use ere_automaton::DFA;
+	/// # let dfa = DFA::new(0);
+	/// let _: DFA<_, String> = dfa.compress(|s: &mut String, c: &char| s.push_str(*c));
+	/// ```
+	pub fn compress<M>(&self, append: impl Fn(&mut M, &L)) -> DFA<Q, M>
 	where
 		Q: Clone,
 		M: Default + Ord + Clone,
@@ -416,7 +427,7 @@ impl<Q: Ord, L: Ord> DetAutomaton<Q, L> {
 			}
 		}
 
-		DetAutomaton::from_parts(
+		DFA::from_parts(
 			self.initial_state.clone(),
 			self.final_states.clone(),
 			transitions.into(),
@@ -464,13 +475,13 @@ impl<'a, Q, L> Iterator for DetSuccessors<'a, Q, L> {
 }
 
 pub struct ReachableStates<'a, Q, L = AnyRange<char>> {
-	aut: &'a DetAutomaton<Q, L>,
+	aut: &'a DFA<Q, L>,
 	visited: HashSet<&'a Q>,
 	stack: Vec<&'a Q>,
 }
 
 impl<'a, Q, L> ReachableStates<'a, Q, L> {
-	fn new(aut: &'a DetAutomaton<Q, L>, q: &'a Q) -> Self {
+	fn new(aut: &'a DFA<Q, L>, q: &'a Q) -> Self {
 		Self {
 			aut,
 			visited: HashSet::new(),

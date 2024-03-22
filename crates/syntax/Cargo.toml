@@ -1,0 +1,16 @@
+[package]
+name = "ere-syntax"
+description = "Parser for POSIX Extended Regular Expressions (ERE)."
+readme = "README.md"
+documentation = "https://docs.rs/ere-syntax"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+ere-automata.workspace = true
+thiserror.workspace = true
+replace_with = "0.1.7"

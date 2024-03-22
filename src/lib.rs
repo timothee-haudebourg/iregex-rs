@@ -1,17 +1,11 @@
-pub mod regexp;
-pub mod automaton;
-
-use btree_range_map::RangeSet;
-pub use regexp::RegExp;
-pub use automaton::{Automaton, DetAutomaton};
-
-/// Computes the intersection of two character sets.
-pub fn charset_intersection(a: &RangeSet<char>, b: &RangeSet<char>) -> RangeSet<char> {
-	let mut result = a.clone();
-
-	for r in b.gaps() {
-		result.remove(r.cloned());
-	}
-
-	result
-}
+//! This library provides an implementation of the *POSIX Extended Regular
+//! Expression* (ERE) class of regular expressions, and nothing more.
+//! It also aims at providing easy tools to inspect finite automata built from
+//! regular expressions, or manually.
+//!
+//! If you are looking for more advanced regular expression, please use the
+//! [`regex`] library.
+//!
+//! [`regex`]: <https://github.com/rust-lang/regex>
+pub use ere_automata as automata;
+pub use ere_syntax as syntax;

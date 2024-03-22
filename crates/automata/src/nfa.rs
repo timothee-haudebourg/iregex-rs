@@ -1,26 +1,25 @@
 use btree_range_map::{AnyRange, RangeMap, RangeSet};
 use std::{
 	collections::{BTreeMap, BTreeSet, HashSet},
-	hash::Hash
+	hash::Hash,
 };
+
+use crate::{dfa::DetTransitions, DFA};
 
 use super::charset_intersection;
 
-mod deterministic;
-pub use deterministic::*;
-
-/// Non deterministic state transitions.
+/// Nondeterministic state transitions.
 pub type Transitions<Q> = BTreeMap<Option<RangeSet<char>>, BTreeSet<Q>>;
 
-/// Non deterministic lexing automaton.
+/// Nondeterministic finite automaton.
 #[derive(Debug)]
-pub struct Automaton<Q> {
+pub struct NFA<Q> {
 	transitions: BTreeMap<Q, Transitions<Q>>,
 	initial_states: BTreeSet<Q>,
 	final_states: BTreeSet<Q>,
 }
 
-impl<Q> Default for Automaton<Q> {
+impl<Q> Default for NFA<Q> {
 	fn default() -> Self {
 		Self {
 			transitions: BTreeMap::new(),
@@ -30,28 +29,30 @@ impl<Q> Default for Automaton<Q> {
 	}
 }
 
-impl<Q> Automaton<Q> {
-	/// Create a new empty non deterministic automaton.
+impl<Q> NFA<Q> {
+	/// Create a new empty nondeterministic finite automaton.
 	pub fn new() -> Self {
 		Self::default()
 	}
 
+	/// Returns an iterator over the transitions.
 	pub fn transitions(&self) -> std::collections::btree_map::Iter<Q, Transitions<Q>> {
 		self.transitions.iter()
 	}
 }
 
-impl<Q: Ord> Automaton<Q> {
+impl<Q: Ord> NFA<Q> {
 	/// Get the successors of the given state.
 	pub fn successors(&self, q: &Q) -> Successors<Q> {
 		Successors::new(self.transitions.get(q))
 	}
 
+	/// Adds the given transition to the automaton.
 	pub fn add(&mut self, source: Q, label: Option<RangeSet<char>>, target: Q)
 	where
 		Q: Clone,
 	{
-		self.declare_state(target.clone());
+		self.add_state(target.clone());
 		self.transitions
 			.entry(source)
 			.or_default()
@@ -60,30 +61,38 @@ impl<Q: Ord> Automaton<Q> {
 			.insert(target);
 	}
 
-	pub fn declare_state(&mut self, q: Q) {
+	/// Adds the given state into the automaton, even if it is not the source
+	/// or destination of any transition.
+	pub fn add_state(&mut self, q: Q) {
 		self.transitions.entry(q).or_default();
 	}
 
+	/// Checks if the given state is an initial state.
 	pub fn is_initial_state(&self, q: &Q) -> bool {
 		self.initial_states.contains(q)
 	}
 
+	/// Sets the given state as an initial state.
 	pub fn add_initial_state(&mut self, q: Q) -> bool {
 		self.initial_states.insert(q)
 	}
 
+	/// Checks if the given state is a final state.
 	pub fn is_final_state(&self, q: &Q) -> bool {
 		self.final_states.contains(q)
 	}
 
+	/// Returns the set of final states.
 	pub fn final_states(&self) -> &BTreeSet<Q> {
 		&self.final_states
 	}
 
+	/// Adds a final state to the automaton.
 	pub fn add_final_state(&mut self, q: Q) -> bool {
 		self.final_states.insert(q)
 	}
 
+	/// Checks if this automaton can recognize the empty string.
 	pub fn recognizes_empty(&self) -> bool {
 		let mut stack: Vec<_> = self.initial_states.iter().collect();
 		let mut visited = BTreeSet::new();
@@ -91,7 +100,7 @@ impl<Q: Ord> Automaton<Q> {
 		while let Some(q) = stack.pop() {
 			if visited.insert(q) {
 				if self.is_final_state(q) {
-					return true
+					return true;
 				}
 
 				if let Some(transitions) = self.transitions.get(q) {
@@ -105,45 +114,77 @@ impl<Q: Ord> Automaton<Q> {
 		false
 	}
 
-	pub fn to_const(&self) -> Option<String> {
+	/// Checks if this automaton recognizes exactly one string.
+	pub fn is_singleton(&self) -> bool {
 		if self.initial_states.len() > 1 {
-			return None
+			return false;
+		}
+
+		if let Some(mut q) = self.initial_states.first() {
+			while let Some(q_transitions) = self.transitions.get(q) {
+				if q_transitions.len() > 1 {
+					return false;
+				}
+
+				match q_transitions.first_key_value() {
+					Some((label, r)) => {
+						if r.len() > 1 {
+							return false;
+						}
+
+						match r.first() {
+							Some(r) => match label {
+								Some(range) if range.len() == 1 => q = r,
+								_ => return false,
+							},
+							None => break,
+						}
+					}
+					None => break,
+				}
+			}
+		}
+
+		true
+	}
+
+	/// Returns the string recognized by this automaton if it is a singleton
+	/// automaton (it recognizes exactly one string).
+	///
+	/// Returns `None` if this automaton recognizes no string, or more than one
+	/// string.
+	pub fn to_singleton(&self) -> Option<String> {
+		if self.initial_states.len() > 1 {
+			return None;
 		}
 
 		let mut result = String::new();
 
 		if let Some(mut q) = self.initial_states.first() {
-			loop {
-				match self.transitions.get(q) {
-					Some(q_transitions) => {
-						if q_transitions.len() > 1 {
-							return None
+			while let Some(q_transitions) = self.transitions.get(q) {
+				if q_transitions.len() > 1 {
+					return None;
+				}
+
+				match q_transitions.first_key_value() {
+					Some((label, r)) => {
+						if r.len() > 1 {
+							return None;
 						}
-		
-						match q_transitions.first_key_value() {
-							Some((label, r)) => {
-								if r.len() > 1 {
-									return None
+
+						match r.first() {
+							Some(r) => match label {
+								Some(range) if range.len() == 1 => {
+									let c = range.iter().next().unwrap().first().unwrap();
+									result.push(c);
+									q = r
 								}
-			
-								match r.first() {
-									Some(r) => {
-										match label {
-											Some(range) if range.len() == 1 => {
-												let c = range.iter().next().unwrap().first().unwrap();
-												result.push(c);
-												q = r
-											}
-											_ => return None
-										}
-									}
-									None => break
-								}
-							}
-							None => break
+								_ => return None,
+							},
+							None => break,
 						}
 					}
-					None => break
+					None => break,
 				}
 			}
 		}
@@ -221,7 +262,8 @@ impl<Q: Ord> Automaton<Q> {
 		simplified_map
 	}
 
-	pub fn determinize<'a, R>(&'a self, mut f: impl FnMut(&BTreeSet<&'a Q>) -> R) -> DetAutomaton<R>
+	/// Turns this NFA into a DFA.
+	pub fn determinize<'a, R>(&'a self, mut f: impl FnMut(&BTreeSet<&'a Q>) -> R) -> DFA<R>
 	where
 		R: Clone + Ord + Hash,
 	{
@@ -252,35 +294,50 @@ impl<Q: Ord> Automaton<Q> {
 			}
 		}
 
-		DetAutomaton::from_parts(
+		DFA::from_parts(
 			f(&initial_state),
 			final_states,
 			DetTransitions::from(transitions),
 		)
 	}
 
-	pub fn mapped_union<R>(&mut self, other: Automaton<R>, f: impl Fn(R) -> Q) {
+	/// Adds the given `other` automaton to `self`, mapping the other automaton
+	/// states in the process.
+	pub fn mapped_union<R>(&mut self, other: NFA<R>, f: impl Fn(R) -> Q) {
 		for (q, transitions) in other.transitions {
 			let this_transitions = self.transitions.entry(f(q)).or_default();
 			for (label, targets) in transitions {
-				this_transitions.entry(label).or_default().extend(targets.into_iter().map(&f));
+				this_transitions
+					.entry(label)
+					.or_default()
+					.extend(targets.into_iter().map(&f));
 			}
 		}
 
-		self.initial_states.extend(other.initial_states.into_iter().map(&f));
-		self.final_states.extend(other.final_states.into_iter().map(f));
+		self.initial_states
+			.extend(other.initial_states.into_iter().map(&f));
+		self.final_states
+			.extend(other.final_states.into_iter().map(f));
 	}
 
+	/// Adds the given `other` automaton to `self`.
+	pub fn union<R>(&mut self, other: NFA<Q>) {
+		self.mapped_union(other, |q| q)
+	}
+
+	/// Computes the product between `self` and `other`.
+	///
+	/// The input function `f` computes the product between two states.
 	pub fn product<'a, 'b, R, S>(
 		&'a self,
-		other: &'b Automaton<R>,
+		other: &'b NFA<R>,
 		mut f: impl FnMut(&'a Q, &'b R) -> S,
-	) -> Automaton<S>
+	) -> NFA<S>
 	where
 		R: Ord,
 		S: Clone + Ord + Hash,
 	{
-		let mut result = Automaton::new();
+		let mut result = NFA::new();
 
 		let mut stack = Vec::with_capacity(self.initial_states.len() * other.initial_states.len());
 		for a in &self.initial_states {
@@ -345,6 +402,7 @@ impl<Q: Ord> Automaton<Q> {
 	}
 }
 
+/// Iterator over the successors of a given state in a [`NFA`].
 pub struct Successors<'a, Q> {
 	inner: Option<std::collections::btree_map::Iter<'a, Option<RangeSet<char>>, BTreeSet<Q>>>,
 }

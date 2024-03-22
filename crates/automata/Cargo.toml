@@ -1,0 +1,17 @@
+[package]
+name = "ere-automata"
+description = "Finite automata definitions for the `ere` crate."
+keywords = ["regex", "dfa", "automata", "automaton", "nfa"]
+categories = ["text-processing"]
+readme = "README.md"
+documentation = "https://docs.rs/ere-automata"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+btree-range-map = "0.7.2"
