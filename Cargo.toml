@@ -1,6 +1,6 @@
 [package]
-name = "ere"
-description = "An implementation of POSIX Extended Regular Expressions."
+name = "regir"
+description = "Intermediate representation for Regular Expressions."
 categories = ["text-processing"]
 readme = "README.md"
 documentation = "https://docs.rs/ere"
@@ -23,10 +23,9 @@ version = "0.1.0"
 members = ["crates/*"]
 
 [workspace.dependencies]
-ere-automata = { version = "0.1.0", path = "crates/automata" }
-ere-syntax = { version = "0.1.0", path = "crates/syntax" }
+regir-automata = { version = "0.1.0", path = "crates/automata" }
+regir-syntax = { version = "0.1.0", path = "crates/syntax" }
 thiserror = "1.0.57"
 
 [dependencies]
-ere-automata.workspace = true
-ere-syntax.workspace = true
+regir-automata.workspace = true

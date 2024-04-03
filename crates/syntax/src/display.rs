@@ -1,10 +1,8 @@
 use core::fmt;
+use regir_automata::AnyRange;
 use std::fmt::Write;
-use ere_automata::AnyRange;
 
-use crate::{Ast, UnanchoredAst};
-
-const CHAR_COUNT: u64 = 0xd7ff + 0x10ffff - 0xe000;
+use crate::{Ast, Atom, Charset, Disjunction, Repeat, Sequence};
 
 impl fmt::Display for Ast {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -12,7 +10,7 @@ impl fmt::Display for Ast {
 			f.write_char('^')?;
 		}
 
-		self.inner.fmt(f)?;
+		self.disjunction.fmt(f)?;
 
 		if self.end_anchor {
 			f.write_char('$')
@@ -22,93 +20,78 @@ impl fmt::Display for Ast {
 	}
 }
 
-impl UnanchoredAst {
-	/// Display this regular expression as a sub expression.
-	///
-	/// This will enclose it between parenthesis if necessary.
-	pub fn display_sub(&self) -> DisplaySub {
-		DisplaySub(self)
+impl fmt::Display for Disjunction {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		for (i, sequence) in self.iter().enumerate() {
+			if i > 0 {
+				f.write_char('|')?;
+			}
+
+			sequence.fmt(f)?;
+		}
+
+		Ok(())
 	}
 }
 
-impl fmt::Display for UnanchoredAst {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Display for Sequence {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		for atom in self {
+			atom.fmt(f)?;
+		}
+
+		Ok(())
+	}
+}
+
+impl fmt::Display for Atom {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			Self::Any => write!(f, "."),
-			Self::Set(charset) => {
-				if charset.len() == 1 {
-					let c = charset.iter().next().unwrap().first().unwrap();
-					fmt_char(c, f)
-				} else {
-					write!(f, "[")?;
-					if charset.len() > CHAR_COUNT / 2 {
-						write!(f, "^")?;
-						for range in charset.gaps() {
-							fmt_range(range.cloned(), f)?
-						}
-					} else {
-						for range in charset {
-							fmt_range(*range, f)?
-						}
-					}
-
-					write!(f, "]")
-				}
+			Self::Any => f.write_char('.'),
+			Self::Char(c) => fmt_char(*c, f),
+			Self::Set(charset) => charset.fmt(f),
+			Self::Repeat(atom, repeat) => {
+				atom.fmt(f)?;
+				repeat.fmt(f)
 			}
-			Self::Sequence(seq) => {
-				for item in seq {
-					if seq.len() > 1 {
-						item.display_sub().fmt(f)?
-					} else {
-						item.fmt(f)?
-					}
-				}
-
-				Ok(())
-			}
-			Self::Repeat(e, 0, 1) => write!(f, "{}?", e.display_sub()),
-			Self::Repeat(e, 0, u32::MAX) => write!(f, "{}*", e.display_sub()),
-			Self::Repeat(e, 1, u32::MAX) => write!(f, "{}+", e.display_sub()),
-			Self::Repeat(e, min, u32::MAX) => write!(f, "{}{{{},}}", e.display_sub(), min),
-			Self::Repeat(e, 0, max) => write!(f, "{}{{,{}}}", e.display_sub(), max),
-			Self::Repeat(e, min, max) => {
-				if min == max {
-					write!(f, "{}{{{}}}", e.display_sub(), min)
-				} else {
-					write!(f, "{}{{{},{}}}", e.display_sub(), min, max)
-				}
-			}
-			Self::Union(items) => {
-				for (i, item) in items.iter().enumerate() {
-					if i > 0 {
-						write!(f, "|")?
-					}
-
-					item.display_sub().fmt(f)?
-				}
-
-				Ok(())
+			Self::Group(g) => {
+				f.write_char('(')?;
+				g.fmt(f)?;
+				f.write_char(')')
 			}
 		}
 	}
 }
 
-/// Display the inner regular expression as a sub expression.
-///
-/// This will enclose it between parenthesis if necessary.
-pub struct DisplaySub<'a>(&'a UnanchoredAst);
+impl fmt::Display for Charset {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		if self.negative {
+			f.write_char('^')?;
+		}
 
-impl<'a> fmt::Display for DisplaySub<'a> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		if self.0.is_simple() {
-			self.0.fmt(f)
+		for &range in &self.set {
+			fmt_range(range, f)?
+		}
+
+		Ok(())
+	}
+}
+
+impl fmt::Display for Repeat {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		if self.min == 0 && self.max == 1 {
+			f.write_char('?')
+		} else if self.min == 0 && self.max == u32::MAX {
+			f.write_char('*')
+		} else if self.min == 1 && self.max == u32::MAX {
+			f.write_char('+')
 		} else {
-			write!(f, "({})", self.0)
+			write!(f, "{{{},{}}}", self.min, self.max)
 		}
 	}
 }
 
-fn fmt_range(range: AnyRange<char>, f: &mut fmt::Formatter) -> fmt::Result {
+pub fn fmt_range(range: AnyRange<char>, f: &mut fmt::Formatter) -> fmt::Result {
 	if range.len() == 1 {
 		fmt_char(range.first().unwrap(), f)
 	} else {
@@ -123,7 +106,7 @@ fn fmt_range(range: AnyRange<char>, f: &mut fmt::Formatter) -> fmt::Result {
 	}
 }
 
-fn fmt_char(c: char, f: &mut fmt::Formatter) -> fmt::Result {
+pub fn fmt_char(c: char, f: &mut fmt::Formatter) -> fmt::Result {
 	match c {
 		'(' => write!(f, "\\("),
 		')' => write!(f, "\\)"),
@@ -150,3 +133,30 @@ fn fmt_char(c: char, f: &mut fmt::Formatter) -> fmt::Result {
 		_ => fmt::Display::fmt(&c, f),
 	}
 }
+
+// #[cfg(test)]
+// mod tests {
+// 	// Each pair is of the form `(regexp, formatted)`.
+// 	// We check that the regexp is correctly parsed by formatting it and
+// 	// checking that it matches the expected `formatted` string.
+// 	const TESTS: &[(&str, &str)] = &[
+// 		("a*", "a*"),
+// 		("a\\*", "a\\*"),
+// 		("[cab]", "[a-c]"),
+// 		("[^cab]", "[^a-c]"),
+// 		("(abc)|de", "abc|de"),
+// 		("(a|b)?", "(a|b)?"),
+// 		("[A-Za-z0-89]", "[0-9A-Za-z]"),
+// 		("[a|b]", "[ab\\|]"),
+// 	];
+
+// 	#[test]
+// 	fn test() {
+// 		for &(regexp, formatted) in TESTS {
+// 			assert_eq!(
+// 				super::Ast::parse(regexp.chars()).unwrap().to_string(),
+// 				*formatted
+// 			)
+// 		}
+// 	}
+// }

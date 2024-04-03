@@ -1,0 +1,5 @@
+[book]
+title = "RegIR"
+
+[preprocessor.katex]
+after = ["links"]

@@ -1,8 +1,8 @@
 [package]
-name = "ere-syntax"
-description = "Parser for POSIX Extended Regular Expressions (ERE)."
+name = "regir-syntax"
+description = "Common syntax for regular expressions."
 readme = "README.md"
-documentation = "https://docs.rs/ere-syntax"
+documentation = "https://docs.rs/regir-syntax"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,6 +11,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-ere-automata.workspace = true
+regir-automata.workspace = true
 thiserror.workspace = true
 replace_with = "0.1.7"

@@ -1,132 +1,136 @@
-use std::{iter::Peekable, str::FromStr};
+use std::{borrow::Borrow, iter::Peekable, ops::Bound, str::FromStr};
 
-use ere_automata::RangeSet;
+use regir_automata::{AnyRange, RangeSet};
 
-use crate::{Ast, Atom, Disjunction, Sequence};
+use crate::{Ast, Atom, Charset, Class, Classes, Disjunction, Repeat, Sequence};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-	#[error("missing opening `(`")]
-	UnmatchedClosingParenthesis,
-
-	#[error("missing closing `)`")]
-	MissingClosingParenthesis,
-
-	#[error("incomplete escape sequence")]
-	IncompleteEscapeSequence,
-
-	#[error("incomplete character set")]
-	IncompleteCharacterSet,
-
-	#[error("nothing to repeat")]
-	NothingToRepeat,
+	#[error(transparent)]
+	Unexpected(Unexpected),
 
 	#[error("unexpected metacharacter `{0}`")]
-	UnexpectedMetacharacter(char)
+	UnexpectedMetacharacter(char),
+
+	#[error("invalid class name `{0}`")]
+	InvalidClassName(String),
+
+	#[error("overflow")]
+	Overflow,
 }
 
-struct Repeat {
-	min: u32,
-	max: u32
+#[derive(Debug, thiserror::Error)]
+pub enum Unexpected {
+	#[error("unexpected end of stream")]
+	EndOfStream,
+
+	#[error("unexpected character `{0}`")]
+	Char(char),
+}
+
+impl From<Option<char>> for Unexpected {
+	fn from(value: Option<char>) -> Self {
+		match value {
+			Some(c) => Self::Char(c),
+			None => Self::EndOfStream,
+		}
+	}
 }
 
 enum AtomOrRepeat {
 	Atom(Atom),
-	Repeat(Repeat)
+	Repeat(Repeat),
 }
 
 impl Atom {
 	pub fn parse(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Option<Self>, Error> {
-		let result = match *chars.peek()? {
-			c @ ('^' | '}' | '?' | '*' | '+') => return Err(Error::UnexpectedMetacharacter(c)),
-			'.' => {
+		let result = match chars.peek().copied() {
+			None | Some(')' | '|' | '$') => return Ok(None),
+			Some(c @ ('^' | ']' | '}' | '?' | '*' | '+')) => {
+				return Err(Error::UnexpectedMetacharacter(c))
+			}
+			Some('.') => {
 				chars.next();
 				Self::Any
-			},
-			'[' => {
-				chars.next();
-				let charset = parse_charset(chars)?;
+			}
+			Some('[') => {
+				let charset = Charset::parse(chars)?;
 				Self::Set(charset)
 			}
-			'(' => {
+			Some('(') => {
 				chars.next();
 				let group = Disjunction::parse(chars)?;
-				Self::Group(group)
-			},
-			'\\' => {
+				match chars.next() {
+					Some(')') => Self::Group(group),
+					other => return Err(Error::Unexpected(other.into())),
+				}
+			}
+			Some('\\') => {
 				chars.next();
 				let c = parse_escaped_char(chars)?;
-				let mut charset = RangeSet::new();
-				charset.insert(c);
-				Self::Set(charset)
+				Self::Char(c)
 			}
-			')' | '|' | '$' => return Ok(None),
-			_ => {
-				let mut charset = RangeSet::new();
-				charset.insert(chars.next());
-				Self::Set(charset)
+			Some(c) => {
+				chars.next();
+				Self::Char(c)
 			}
 		};
-		
+
 		Ok(Some(result))
 	}
 }
 
 impl AtomOrRepeat {
 	pub fn parse(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Option<Self>, Error> {
-		let result = match chars.peek()? {
-			'^' => return Err(Error::UnexpectedMetacharacter('^')),
-			'}' => return Err(Error::UnexpectedMetacharacter('}')),
-			'.' => {
+		let result = match chars.peek().copied() {
+			None | Some(')' | '|' | '$') => return Ok(None),
+			Some(c @ ('^' | ']' | '}')) => return Err(Error::UnexpectedMetacharacter(c)),
+			Some('.') => {
 				chars.next();
 				Self::Atom(Atom::Any)
-			},
-			'[' => {
-				chars.next();
-				let charset = parse_charset(&mut chars)?;
+			}
+			Some('[') => {
+				let charset = Charset::parse(chars)?;
 				Self::Atom(Atom::Set(charset))
 			}
-			'(' => {
+			Some('(') => {
 				chars.next();
 				let group = Disjunction::parse(chars)?;
-				Self::Atom(Atom::Group(group))
-			},
-			'?' => {
+				match chars.next() {
+					Some(')') => Self::Atom(Atom::Group(group)),
+					other => return Err(Error::Unexpected(other.into())),
+				}
+			}
+			Some('{') => Self::Repeat(Repeat::parse(chars)?),
+			Some('?') => {
 				chars.next();
-				Self::Repeater(Repeat {
+				Self::Repeat(Repeat { min: 0, max: 1 })
+			}
+			Some('*') => {
+				chars.next();
+				Self::Repeat(Repeat {
 					min: 0,
-					max: 1
+					max: u32::MAX,
 				})
-			},
-			'*' => {
+			}
+			Some('+') => {
 				chars.next();
-				Self::Repeater(Repeat {
-					min: 0,
-					max: u32::MAX
-				})
-			},
-			'+' => {
-				chars.next();
-				Self::Repeater(Repeat {
+				Self::Repeat(Repeat {
 					min: 1,
-					max: u32::MAX
+					max: u32::MAX,
 				})
-			},
-			'\\' => {
+			}
+			Some('\\') => {
 				chars.next();
 				let c = parse_escaped_char(chars)?;
-				let mut charset = RangeSet::new();
-				charset.insert(c);
-				Self::Atom(Atom::Set(charset))
+				Self::Atom(Atom::Char(c))
 			}
-			')' | '|' | '$' => return Ok(None),
-			_ => {
-				let mut charset = RangeSet::new();
-				charset.insert(chars.next());
-				Self::Atom(Atom::Set(charset))
+			Some(c) => {
+				chars.next();
+				Self::Atom(Atom::Char(c))
 			}
 		};
-		
+
 		Ok(Some(result))
 	}
 }
@@ -146,171 +150,54 @@ impl Sequence {
 
 				Ok(Self(result))
 			}
-			None => {
-				Ok(Self::empty())
-			}
+			None => Ok(Self::new()),
 		}
 	}
 }
 
 impl Disjunction {
 	pub fn parse(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Self, Error> {
-		let mut first = Sequence::parse(chars)?;
-		todo!()
+		let mut result = vec![Sequence::parse(chars)?];
+		while let Some(c) = chars.peek().copied() {
+			match c {
+				'|' => {
+					chars.next();
+					result.push(Sequence::parse(chars)?)
+				}
+				')' | '$' => break,
+				c => return Err(Error::UnexpectedMetacharacter(c)),
+			}
+		}
+
+		Ok(Self(result))
 	}
 }
 
 impl Ast {
-	pub fn parse(mut chars: impl Iterator<Item = char>) -> Result<Self, Error> {
-		match chars.next() {
-			Some(c) => {
-				if c == '^' {
-					let (inner, end_anchor) = UnanchoredAst::parse(chars)?;
-					Ok(Self {
-						start_anchor: true,
-						end_anchor,
-						inner
-					})
-				} else {
-					let (inner, end_anchor) = UnanchoredAst::parse(std::iter::once(c).chain(chars))?;
-					Ok(Self {
-						start_anchor: false,
-						end_anchor,
-						inner
-					})
-				}
+	pub fn parse(chars: impl IntoIterator<Item = char>) -> Result<Self, Error> {
+		let mut chars = chars.into_iter().peekable();
+
+		let start_anchor = match chars.peek().copied() {
+			Some('^') => {
+				chars.next();
+				true
 			}
-			None => {
-				Ok(Self::empty())
-			}
-		}
-	}
-}
+			_ => false,
+		};
 
-impl UnanchoredAst {
-	pub fn parse(mut chars: impl Iterator<Item = char>) -> Result<(Self, bool), Error> {
-		struct Disjunction(Vec<Vec<UnanchoredAst>>);
+		let inner = Disjunction::parse(&mut chars)?;
 
-		impl Disjunction {
-			fn new() -> Self {
-				Self(vec![Vec::new()])
-			}
+		let end_anchor = match chars.next() {
+			Some('$') => true,
+			None => false,
+			Some(c) => return Err(Error::UnexpectedMetacharacter(c)),
+		};
 
-			fn last_sequence_mut(&mut self) -> &mut Vec<UnanchoredAst> {
-				self.0.last_mut().unwrap()
-			}
-
-			fn last_regexp_mut(&mut self) -> Option<&mut UnanchoredAst> {
-				self.last_sequence_mut().last_mut()
-			}
-
-			fn push(&mut self) {
-				self.0.push(Vec::new())
-			}
-
-			fn union(&mut self, other: Self) {
-				self.0.extend(other.0)
-			}
-
-			fn into_regexp(self) -> UnanchoredAst {
-				UnanchoredAst::Union(self.0.into_iter().map(UnanchoredAst::Sequence).collect())
-			}
-		}
-
-		struct Stack(Vec<Disjunction>);
-
-		impl Stack {
-			fn new() -> Self {
-				Self(vec![Disjunction::new()])
-			}
-
-			fn last_mut(&mut self) -> &mut Disjunction {
-				self.0.last_mut().unwrap()
-			}
-
-			fn last_sequence_mut(&mut self) -> &mut Vec<UnanchoredAst> {
-				self.last_mut().last_sequence_mut()
-			}
-
-			fn last_regexp_mut(&mut self) -> Option<&mut UnanchoredAst> {
-				self.last_mut().last_regexp_mut()
-			}
-
-			fn push(&mut self) {
-				self.0.push(Disjunction::new())
-			}
-
-			fn pop(&mut self) -> Result<(), Error> {
-				let b = self.0.pop().unwrap();
-				let a = self
-					.0
-					.last_mut()
-					.ok_or(Error::UnmatchedClosingParenthesis)?;
-				a.union(b);
-				Ok(())
-			}
-
-			fn into_regexp(self) -> Result<UnanchoredAst, Error> {
-				match self.0.len() {
-					0 => unreachable!(),
-					1 => Ok(self
-						.0
-						.into_iter()
-						.next()
-						.unwrap()
-						.into_regexp()
-						.simplified()),
-					_ => Err(Error::MissingClosingParenthesis),
-				}
-			}
-		}
-
-		let mut stack = Stack::new();
-		let mut anchored = false;
-
-		while let Some(c) = chars.next() {
-			match c {
-				'^' => return Err(Error::UnexpectedMetacharacter('^')),
-				'.' => {
-					stack.last_sequence_mut().push(UnanchoredAst::Any)
-				}
-				'(' => stack.push(),
-				')' => stack.pop()?,
-				'|' => stack.last_mut().push(),
-				'[' => {
-					let charset = parse_charset(&mut chars)?;
-					stack.last_sequence_mut().push(UnanchoredAst::Set(charset))
-				}
-				'\\' => {
-					let c = parse_escaped_char(&mut chars)?;
-					let mut charset = RangeSet::new();
-					charset.insert(c);
-					stack.last_sequence_mut().push(UnanchoredAst::Set(charset))
-				}
-				'?' => stack
-					.last_regexp_mut()
-					.ok_or(Error::NothingToRepeat)?
-					.repeat(0, 1),
-				'*' => stack
-					.last_regexp_mut()
-					.ok_or(Error::NothingToRepeat)?
-					.repeat(0, u32::MAX),
-				'+' => stack
-					.last_regexp_mut()
-					.ok_or(Error::NothingToRepeat)?
-					.repeat(1, u32::MAX),
-				'$' => {
-					// ...
-				}
-				c => {
-					let mut charset = RangeSet::new();
-					charset.insert(c);
-					stack.last_sequence_mut().push(UnanchoredAst::Set(charset))
-				}
-			}
-		}
-
-		stack.into_regexp().map(|e| (e, anchored))
+		Ok(Self {
+			start_anchor,
+			end_anchor,
+			disjunction: inner,
+		})
 	}
 }
 
@@ -322,85 +209,176 @@ impl FromStr for Ast {
 	}
 }
 
-impl<S: AsRef<str>> From<S> for Ast {
+impl<S: Borrow<str>> From<S> for Ast {
 	fn from(s: S) -> Self {
-		let mut inner = UnanchoredAst::empty();
-		
-		for c in s.as_ref().chars() {
-			let mut charset = RangeSet::new();
-			charset.insert(c);
-			inner.push(UnanchoredAst::Set(charset))
+		let mut seq = Sequence::new();
+
+		for c in s.borrow().chars() {
+			seq.push(Atom::Char(c))
 		}
 
 		Self {
 			start_anchor: true,
 			end_anchor: true,
-			inner
+			disjunction: Disjunction(vec![seq]),
 		}
 	}
 }
 
-fn parse_charset(chars: &mut impl Iterator<Item = char>) -> Result<RangeSet<char>, Error> {
-	#[derive(PartialEq, Eq)]
-	enum State {
-		Start,
-		RangeStart,
-		RangeDashOrStart,
-		RangeEnd,
-	}
-
-	let mut state = State::Start;
-	let mut negate = false;
-	let mut set = RangeSet::new();
-
-	let mut range_start = None;
-
-	loop {
+impl Class {
+	fn parse(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Self, Error> {
 		match chars.next() {
-			Some(c) => match c {
-				'^' if state == State::Start => {
-					negate = true;
-					state = State::RangeStart;
+			Some(':') => {
+				let mut name = String::new();
+
+				loop {
+					match chars.next() {
+						Some(':') => break,
+						Some(
+							c @ ('(' | ')' | '{' | '}' | '[' | ']' | '|' | '?' | '*' | '+' | '^'),
+						) => return Err(Error::UnexpectedMetacharacter(c)),
+						Some(c) => name.push(c),
+						None => return Err(Error::Unexpected(Unexpected::EndOfStream)),
+					}
 				}
-				c => match state {
-					State::RangeDashOrStart if c == '-' => state = State::RangeEnd,
-					State::Start | State::RangeStart | State::RangeDashOrStart if c == ']' => {
-						if let Some(start) = range_start.take() {
-							set.insert(start);
-						}
 
-						if negate {
-							set = set.complement();
-						}
-
-						break Ok(set);
-					}
-					State::Start | State::RangeStart | State::RangeDashOrStart => {
-						if let Some(start) = range_start.take() {
-							set.insert(start);
-						}
-
-						let c = match c {
-							'\\' => parse_escaped_char(chars)?,
-							c => c,
-						};
-
-						range_start = Some(c);
-						state = State::RangeDashOrStart
-					}
-					State::RangeEnd => {
-						let c = match c {
-							'\\' => parse_escaped_char(chars)?,
-							c => c,
-						};
-
-						set.insert(range_start.take().unwrap()..=c);
-						state = State::RangeStart
-					}
-				},
-			},
-			None => break Err(Error::IncompleteCharacterSet),
+				match chars.next() {
+					Some(']') => match Class::from_name(&name) {
+						Some(class) => Ok(class),
+						None => Err(Error::InvalidClassName(name)),
+					},
+					other => Err(Error::Unexpected(other.into())),
+				}
+			}
+			other => Err(Error::Unexpected(other.into())),
 		}
+	}
+}
+
+enum RangeOrClass {
+	Range(AnyRange<char>, bool),
+	Class(Class),
+}
+
+impl RangeOrClass {
+	fn parse(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Option<Self>, Error> {
+		let start = match chars.next() {
+			Some(']') => return Ok(None),
+			Some('[') => {
+				return Ok(Some(Self::Class(Class::parse(chars)?)));
+			}
+			Some(c) => c,
+			None => return Err(Error::Unexpected(Unexpected::EndOfStream)),
+		};
+
+		let (end, minus) = match chars.peek().copied() {
+			Some('-') => {
+				chars.next();
+				match chars.peek().copied() {
+					Some(']') => (start, true),
+					Some(c) => {
+						chars.next();
+						(c, false)
+					}
+					None => return Err(Error::Unexpected(Unexpected::EndOfStream)),
+				}
+			}
+			_ => (start, false),
+		};
+
+		Ok(Some(Self::Range(
+			AnyRange::new(Bound::Included(start), Bound::Included(end)),
+			minus,
+		)))
+	}
+}
+
+impl Charset {
+	fn parse(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Self, Error> {
+		match chars.next() {
+			Some('[') => (),
+			other => return Err(Error::Unexpected(other.into())),
+		}
+
+		let negative = match chars.peek().copied() {
+			Some('^') => {
+				chars.next();
+				true
+			}
+			_ => false,
+		};
+
+		let mut classes = Classes::none();
+		let mut set = RangeSet::new();
+
+		while let Some(range_or_class) = RangeOrClass::parse(chars)? {
+			match range_or_class {
+				RangeOrClass::Range(range, and_minus) => {
+					set.insert(range);
+					if and_minus {
+						set.insert('-');
+					}
+				}
+				RangeOrClass::Class(class) => {
+					classes.insert(class);
+				}
+			}
+		}
+
+		Ok(Self {
+			negative,
+			classes,
+			set,
+		})
+	}
+}
+
+impl Repeat {
+	fn parse(chars: &mut Peekable<impl Iterator<Item = char>>) -> Result<Self, Error> {
+		match chars.next() {
+			Some('{') => (),
+			other => return Err(Error::Unexpected(other.into())),
+		}
+
+		fn parse_number<T, C: Iterator<Item = char>>(
+			chars: &mut Peekable<C>,
+			f: impl FnOnce(&mut Peekable<C>, Option<u32>, char) -> Result<T, Error>,
+		) -> Result<T, Error> {
+			match chars.next() {
+				Some(c) => match c.to_digit(10) {
+					Some(mut value) => loop {
+						match chars.next() {
+							Some(c) => match c.to_digit(10) {
+								Some(d) => {
+									value = value.checked_mul(10).ok_or(Error::Overflow)?;
+									value = value.checked_add(d).ok_or(Error::Overflow)?;
+								}
+								None => break f(chars, Some(value), c),
+							},
+							None => break Err(Error::Unexpected(Unexpected::EndOfStream)),
+						}
+					},
+					None => f(chars, None, c),
+				},
+				None => Err(Error::Unexpected(Unexpected::EndOfStream)),
+			}
+		}
+
+		parse_number(chars, |chars, value, next| match value {
+			Some(min) => match next {
+				',' => parse_number(chars, |_, value, next| {
+					if next == '}' {
+						let max = value.unwrap_or(u32::MAX);
+						Ok(Self { min, max })
+					} else {
+						Err(Error::Unexpected(Unexpected::Char(next)))
+					}
+				}),
+				'}' => Ok(Self { min, max: min }),
+				c => Err(Error::Unexpected(Unexpected::Char(c))),
+			},
+			None => Err(Error::Unexpected(Unexpected::Char(next))),
+		})
 	}
 }
 
@@ -419,6 +397,67 @@ fn parse_escaped_char(chars: &mut impl Iterator<Item = char>) -> Result<char, Er
 			'e' => Ok('\x1b'),
 			c => Ok(c),
 		},
-		None => Err(Error::IncompleteEscapeSequence),
+		None => Err(Error::Unexpected(Unexpected::EndOfStream)),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parse_success() {
+		const INPUTS: [&str; 19] = [
+			"",
+			"abc",
+			"(abc)",
+			"[abc]",
+			"[^abc]",
+			"[a^bc]",
+			"[abc-]",
+			"abc?",
+			"abc*",
+			"abc+",
+			"abc|def",
+			"(abc|def)",
+			"(abc|def)*",
+			"(abc|(def)?)*",
+			"[[:alpha:]]",
+			"(abc){12,}",
+			"(abc){12,34}",
+			"(abc){12}",
+			"(abc){4294967295}",
+		];
+
+		for input in INPUTS {
+			if let Err(e) = Ast::parse(input.chars()) {
+				panic!("failed to parse `{input}` with {e:?}")
+			}
+		}
+	}
+
+	#[test]
+	fn parse_failure() {
+		const INPUTS: [&str; 13] = [
+			"?",
+			"(abc",
+			"[[:abc:]]",
+			"[abc",
+			"[^abc",
+			"abc)",
+			"abc]",
+			"(abc){,}",
+			"(abc){,12}",
+			"(abc){,12",
+			"(abc){12,34",
+			"(abc){12",
+			"(abc){4294967296}",
+		];
+
+		for input in INPUTS {
+			if let Ok(ast) = Ast::parse(input.chars()) {
+				panic!("failed to reject `{input}`, parsed as {ast:?}")
+			}
+		}
 	}
 }

@@ -391,9 +391,9 @@ impl<Q: Ord, L: Ord> DFA<Q, L> {
 	/// # Example
 	///
 	/// ```
-	/// # use ere_automaton::DFA;
+	/// # use ere_automata::DFA;
 	/// # let dfa = DFA::new(0);
-	/// let _: DFA<_, String> = dfa.compress(|s: &mut String, c: &char| s.push_str(*c));
+	/// let _: DFA<_, String> = dfa.compress(|s: &mut String, c: &char| s.push(*c));
 	/// ```
 	pub fn compress<M>(&self, append: impl Fn(&mut M, &L)) -> DFA<Q, M>
 	where
