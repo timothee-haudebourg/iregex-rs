@@ -1,5 +1,5 @@
 use core::fmt;
-use regir_automata::AnyRange;
+use iregex_automata::AnyRange;
 use std::fmt::Write;
 
 use crate::{Ast, Atom, Charset, Disjunction, Repeat, Sequence};

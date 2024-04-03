@@ -4,16 +4,78 @@ use std::{
 	hash::Hash,
 };
 
-use crate::{dfa::DetTransitions, DFA};
+use crate::{dfa::DetTransitions, Automaton, DFA};
 
 use super::charset_intersection;
+
+#[derive(Debug)]
+pub struct TooManyStates;
+
+pub trait StateBuilder<Q> {
+	type Error;
+
+	fn next_state(&mut self, nfa: &mut NFA<Q>) -> Result<Q, Self::Error>;
+}
+
+impl<'a, Q, S: StateBuilder<Q>> StateBuilder<Q> for &'a mut S {
+	type Error = S::Error;
+
+	fn next_state(&mut self, nfa: &mut NFA<Q>) -> Result<Q, Self::Error> {
+		S::next_state(*self, nfa)
+	}
+}
+
+pub struct U32StateBuilder {
+	count: u32,
+	limit: u32,
+}
+
+impl Default for U32StateBuilder {
+	fn default() -> Self {
+		U32StateBuilder {
+			count: 0,
+			limit: u32::MAX,
+		}
+	}
+}
+
+impl StateBuilder<u32> for U32StateBuilder {
+	type Error = TooManyStates;
+
+	fn next_state(&mut self, nfa: &mut NFA<u32>) -> Result<u32, Self::Error> {
+		let q = self.count;
+		self.count = self.count.checked_add(1).ok_or(TooManyStates)?;
+		if self.count > self.limit {
+			Err(TooManyStates)
+		} else {
+			nfa.add_state(q);
+			Ok(q)
+		}
+	}
+}
+
+pub trait BuildNFA<Q: Ord> {
+	fn build_nfa<S: StateBuilder<Q>>(&self, mut state_builder: S) -> Result<NFA<Q>, S::Error> {
+		let mut nfa = NFA::new();
+		let (a, b) = self.build_nfa_from(&mut state_builder, &mut nfa)?;
+		nfa.add_initial_state(a);
+		nfa.add_final_state(b);
+		Ok(nfa)
+	}
+
+	fn build_nfa_from<S: StateBuilder<Q>>(
+		&self,
+		state_builder: &mut S,
+		nfa: &mut NFA<Q>,
+	) -> Result<(Q, Q), S::Error>;
+}
 
 /// Nondeterministic state transitions.
 pub type Transitions<Q> = BTreeMap<Option<RangeSet<char>>, BTreeSet<Q>>;
 
 /// Nondeterministic finite automaton.
 #[derive(Debug)]
-pub struct NFA<Q> {
+pub struct NFA<Q = u32> {
 	transitions: BTreeMap<Q, Transitions<Q>>,
 	initial_states: BTreeSet<Q>,
 	final_states: BTreeSet<Q>,
@@ -421,4 +483,108 @@ impl<'a, Q> Iterator for Successors<'a, Q> {
 	fn next(&mut self) -> Option<Self::Item> {
 		self.inner.as_mut().and_then(|inner| inner.next())
 	}
+}
+
+impl<Q: Ord + Hash> Automaton<char> for NFA<Q> {
+	type State<'a> = VisitingState<'a, Q> where Self: 'a;
+
+	fn initial_state(&self) -> Option<Self::State<'_>> {
+		let mut stack = Vec::new();
+		let mut states = HashSet::new();
+
+		for r in &self.initial_states {
+			states.insert(r);
+			stack.push(r);
+		}
+
+		// epsilon-closure.
+		while let Some(q) = stack.pop() {
+			if let Some(q_transitions) = self.transitions.get(q) {
+				if let Some(targets) = q_transitions.get(&None) {
+					for r in targets {
+						if states.insert(r) {
+							stack.push(r);
+						}
+					}
+				}
+			}
+		}
+
+		if states.is_empty() {
+			None
+		} else {
+			Some(VisitingState {
+				states,
+				next_states: HashSet::new(),
+				stack,
+			})
+		}
+	}
+
+	fn next_state<'a>(
+		&'a self,
+		VisitingState {
+			mut states,
+			mut next_states,
+			mut stack,
+		}: Self::State<'a>,
+		token: char,
+	) -> Option<Self::State<'_>> {
+		for &q in &states {
+			if let Some(q_transitions) = self.transitions.get(q) {
+				for (label, targets) in q_transitions {
+					if let Some(label) = label {
+						if label.contains(token) {
+							for r in targets {
+								if next_states.insert(r) {
+									stack.push(r);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// epsilon-closure.
+		while let Some(q) = stack.pop() {
+			if let Some(q_transitions) = self.transitions.get(q) {
+				if let Some(targets) = q_transitions.get(&None) {
+					for r in targets {
+						if next_states.insert(r) {
+							stack.push(r);
+						}
+					}
+				}
+			}
+		}
+
+		if next_states.is_empty() {
+			None
+		} else {
+			states.clear();
+			eprintln!("next is {} len", next_states.len());
+			Some(VisitingState {
+				states: next_states,
+				next_states: states,
+				stack,
+			})
+		}
+	}
+
+	fn is_final_state<'a>(&'a self, VisitingState { states, .. }: &Self::State<'a>) -> bool {
+		for &q in states {
+			if self.final_states.contains(q) {
+				return true;
+			}
+		}
+
+		false
+	}
+}
+
+pub struct VisitingState<'a, Q> {
+	states: HashSet<&'a Q>,
+	next_states: HashSet<&'a Q>,
+	stack: Vec<&'a Q>,
 }

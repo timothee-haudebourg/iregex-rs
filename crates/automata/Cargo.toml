@@ -1,6 +1,6 @@
 [package]
-name = "regir-automata"
-description = "Finite automata definitions for the `regir` crate."
+name = "iregex-automata"
+description = "Finite automata definitions for the `iregex` crate."
 keywords = ["regex", "dfa", "automata", "automaton", "nfa"]
 categories = ["text-processing"]
 readme = "README.md"

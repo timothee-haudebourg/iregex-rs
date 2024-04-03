@@ -1,8 +1,8 @@
 [package]
-name = "regir-syntax"
+name = "iregex-syntax"
 description = "Common syntax for regular expressions."
 readme = "README.md"
-documentation = "https://docs.rs/regir-syntax"
+documentation = "https://docs.rs/iregex-syntax"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -11,6 +11,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-regir-automata.workspace = true
+iregex-automata.workspace = true
 thiserror.workspace = true
 replace_with = "0.1.7"

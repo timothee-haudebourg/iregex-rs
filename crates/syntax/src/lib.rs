@@ -4,7 +4,7 @@
 //! ([`char`] type) using the [`ere-automata`] library.
 //!
 //! [`ere-automata`]: <https://crates.io/crates/ere-automata>
-use regir_automata::RangeSet;
+use iregex_automata::RangeSet;
 use replace_with::replace_with_or_abort;
 use std::ops::Deref;
 

@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, iter::Peekable, ops::Bound, str::FromStr};
 
-use regir_automata::{AnyRange, RangeSet};
+use iregex_automata::{AnyRange, RangeSet};
 
 use crate::{Ast, Atom, Charset, Class, Classes, Disjunction, Repeat, Sequence};
 

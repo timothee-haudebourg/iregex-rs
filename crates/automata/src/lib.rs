@@ -12,6 +12,13 @@ pub use nfa::NFA;
 pub mod dfa;
 pub use dfa::DFA;
 
+pub fn any_char() -> RangeSet<char> {
+	let mut set = RangeSet::new();
+	set.insert('\u{0}'..='\u{d7ff}');
+	set.insert('\u{e000}'..='\u{10ffff}');
+	set
+}
+
 /// Computes the intersection of two character sets.
 pub fn charset_intersection(a: &RangeSet<char>, b: &RangeSet<char>) -> RangeSet<char> {
 	let mut result = a.clone();
@@ -21,4 +28,21 @@ pub fn charset_intersection(a: &RangeSet<char>, b: &RangeSet<char>) -> RangeSet<
 	}
 
 	result
+}
+
+/// Deterministic or non-deterministic automaton.
+pub trait Automaton<T> {
+	type State<'a>
+	where
+		Self: 'a;
+
+	fn initial_state(&self) -> Option<Self::State<'_>>;
+
+	fn next_state<'a>(
+		&'a self,
+		current_state: Self::State<'a>,
+		token: T,
+	) -> Option<Self::State<'_>>;
+
+	fn is_final_state<'a>(&'a self, state: &Self::State<'a>) -> bool;
 }
