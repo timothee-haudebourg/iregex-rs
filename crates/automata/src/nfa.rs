@@ -4,84 +4,108 @@ use std::{
 	hash::Hash,
 };
 
-use crate::{dfa::DetTransitions, Automaton, DFA};
+use crate::{dfa::DetTransitions, Automaton, Class, Map, Token, DFA};
 
-use super::charset_intersection;
+use super::token_set_intersection;
 
 #[derive(Debug)]
 pub struct TooManyStates;
 
-pub trait StateBuilder<Q> {
+/// State builder.
+pub trait StateBuilder<T, Q, C = ()> {
 	type Error;
 
-	fn next_state(&mut self, nfa: &mut NFA<Q>) -> Result<Q, Self::Error>;
+	fn next_state(&mut self, nfa: &mut NFA<Q, T>, class: C) -> Result<Q, Self::Error>;
+
+	fn class_of(&self, q: &Q) -> Option<&C>;
 }
 
-impl<'a, Q, S: StateBuilder<Q>> StateBuilder<Q> for &'a mut S {
+impl<'a, T, Q, C, S: StateBuilder<T, Q, C>> StateBuilder<T, Q, C> for &'a mut S {
 	type Error = S::Error;
 
-	fn next_state(&mut self, nfa: &mut NFA<Q>) -> Result<Q, Self::Error> {
-		S::next_state(*self, nfa)
+	fn next_state(&mut self, nfa: &mut NFA<Q, T>, class: C) -> Result<Q, Self::Error> {
+		S::next_state(*self, nfa, class)
+	}
+
+	fn class_of(&self, q: &Q) -> Option<&C> {
+		S::class_of(*self, q)
 	}
 }
 
-pub struct U32StateBuilder {
-	count: u32,
+pub struct U32StateBuilder<C> {
+	states: Vec<C>,
 	limit: u32,
 }
 
-impl Default for U32StateBuilder {
+impl<C> Default for U32StateBuilder<C> {
 	fn default() -> Self {
 		U32StateBuilder {
-			count: 0,
+			states: Vec::new(),
 			limit: u32::MAX,
 		}
 	}
 }
 
-impl StateBuilder<u32> for U32StateBuilder {
+impl<T, C> StateBuilder<T, u32, C> for U32StateBuilder<C> {
 	type Error = TooManyStates;
 
-	fn next_state(&mut self, nfa: &mut NFA<u32>) -> Result<u32, Self::Error> {
-		let q = self.count;
-		self.count = self.count.checked_add(1).ok_or(TooManyStates)?;
-		if self.count > self.limit {
+	fn next_state(&mut self, nfa: &mut NFA<u32, T>, class: C) -> Result<u32, Self::Error> {
+		let q = self.states.len() as u32;
+		self.states.push(class);
+		if self.states.len() as u32 > self.limit {
 			Err(TooManyStates)
 		} else {
 			nfa.add_state(q);
 			Ok(q)
 		}
 	}
+
+	fn class_of(&self, q: &u32) -> Option<&C> {
+		self.states.get(*q as usize)
+	}
 }
 
-pub trait BuildNFA<Q: Ord> {
-	fn build_nfa<S: StateBuilder<Q>>(&self, mut state_builder: S) -> Result<NFA<Q>, S::Error> {
+pub trait BuildNFA<T = char, Q = u32, C = ()>
+where
+	T: Clone,
+	Q: Ord,
+	C: Class<T>,
+{
+	fn build_nfa<S: StateBuilder<T, Q, C>>(
+		&self,
+		mut state_builder: S,
+		class: C,
+	) -> Result<NFA<Q, T>, S::Error> {
 		let mut nfa = NFA::new();
-		let (a, b) = self.build_nfa_from(&mut state_builder, &mut nfa)?;
+		let (a, bs) = self.build_nfa_from(&mut state_builder, &mut nfa, &class)?;
 		nfa.add_initial_state(a);
-		nfa.add_final_state(b);
+		for (_, b) in bs.into_entries() {
+			nfa.add_final_state(b);
+		}
+
 		Ok(nfa)
 	}
 
-	fn build_nfa_from<S: StateBuilder<Q>>(
+	fn build_nfa_from<S: StateBuilder<T, Q, C>>(
 		&self,
 		state_builder: &mut S,
-		nfa: &mut NFA<Q>,
-	) -> Result<(Q, Q), S::Error>;
+		nfa: &mut NFA<Q, T>,
+		class: &C,
+	) -> Result<(Q, C::Map<Q>), S::Error>;
 }
 
 /// Nondeterministic state transitions.
-pub type Transitions<Q> = BTreeMap<Option<RangeSet<char>>, BTreeSet<Q>>;
+pub type Transitions<T, Q> = BTreeMap<Option<RangeSet<T>>, BTreeSet<Q>>;
 
 /// Nondeterministic finite automaton.
 #[derive(Debug)]
-pub struct NFA<Q = u32> {
-	transitions: BTreeMap<Q, Transitions<Q>>,
+pub struct NFA<Q = u32, T = char> {
+	transitions: BTreeMap<Q, Transitions<T, Q>>,
 	initial_states: BTreeSet<Q>,
 	final_states: BTreeSet<Q>,
 }
 
-impl<Q> Default for NFA<Q> {
+impl<T, Q> Default for NFA<Q, T> {
 	fn default() -> Self {
 		Self {
 			transitions: BTreeMap::new(),
@@ -91,36 +115,37 @@ impl<Q> Default for NFA<Q> {
 	}
 }
 
-impl<Q> NFA<Q> {
+impl<T, Q> NFA<Q, T> {
 	/// Create a new empty nondeterministic finite automaton.
 	pub fn new() -> Self {
 		Self::default()
 	}
 
+	/// Returns the set of initial states.
+	pub fn initial_states(&self) -> &BTreeSet<Q> {
+		&self.initial_states
+	}
+
+	/// Returns the set of final states.
+	pub fn final_states(&self) -> &BTreeSet<Q> {
+		&self.final_states
+	}
+
+	/// Returns the set of final states.
+	pub fn states(&self) -> impl Iterator<Item = &Q> {
+		self.transitions.keys()
+	}
+
 	/// Returns an iterator over the transitions.
-	pub fn transitions(&self) -> std::collections::btree_map::Iter<Q, Transitions<Q>> {
+	pub fn transitions(&self) -> std::collections::btree_map::Iter<Q, Transitions<T, Q>> {
 		self.transitions.iter()
 	}
 }
 
-impl<Q: Ord> NFA<Q> {
+impl<T, Q: Ord> NFA<Q, T> {
 	/// Get the successors of the given state.
-	pub fn successors(&self, q: &Q) -> Successors<Q> {
+	pub fn successors(&self, q: &Q) -> Successors<T, Q> {
 		Successors::new(self.transitions.get(q))
-	}
-
-	/// Adds the given transition to the automaton.
-	pub fn add(&mut self, source: Q, label: Option<RangeSet<char>>, target: Q)
-	where
-		Q: Clone,
-	{
-		self.add_state(target.clone());
-		self.transitions
-			.entry(source)
-			.or_default()
-			.entry(label)
-			.or_default()
-			.insert(target);
 	}
 
 	/// Adds the given state into the automaton, even if it is not the source
@@ -144,14 +169,25 @@ impl<Q: Ord> NFA<Q> {
 		self.final_states.contains(q)
 	}
 
-	/// Returns the set of final states.
-	pub fn final_states(&self) -> &BTreeSet<Q> {
-		&self.final_states
-	}
-
 	/// Adds a final state to the automaton.
 	pub fn add_final_state(&mut self, q: Q) -> bool {
 		self.final_states.insert(q)
+	}
+}
+
+impl<T: Token, Q: Ord> NFA<Q, T> {
+	/// Adds the given transition to the automaton.
+	pub fn add(&mut self, source: Q, label: Option<RangeSet<T>>, target: Q)
+	where
+		Q: Clone,
+	{
+		self.add_state(target.clone());
+		self.transitions
+			.entry(source)
+			.or_default()
+			.entry(label)
+			.or_default()
+			.insert(target);
 	}
 
 	/// Checks if this automaton can recognize the empty string.
@@ -196,7 +232,7 @@ impl<Q: Ord> NFA<Q> {
 
 						match r.first() {
 							Some(r) => match label {
-								Some(range) if range.len() == 1 => q = r,
+								Some(range) if T::is_one(range.len()) => q = r,
 								_ => return false,
 							},
 							None => break,
@@ -215,12 +251,12 @@ impl<Q: Ord> NFA<Q> {
 	///
 	/// Returns `None` if this automaton recognizes no string, or more than one
 	/// string.
-	pub fn to_singleton(&self) -> Option<String> {
+	pub fn to_singleton(&self) -> Option<Vec<T>> {
 		if self.initial_states.len() > 1 {
 			return None;
 		}
 
-		let mut result = String::new();
+		let mut result = Vec::new();
 
 		if let Some(mut q) = self.initial_states.first() {
 			while let Some(q_transitions) = self.transitions.get(q) {
@@ -236,7 +272,7 @@ impl<Q: Ord> NFA<Q> {
 
 						match r.first() {
 							Some(r) => match label {
-								Some(range) if range.len() == 1 => {
+								Some(range) if T::is_one(range.len()) => {
 									let c = range.iter().next().unwrap().first().unwrap();
 									result.push(c);
 									q = r
@@ -277,7 +313,7 @@ impl<Q: Ord> NFA<Q> {
 	fn determinize_transitions_for(
 		&self,
 		states: &BTreeSet<&Q>,
-	) -> BTreeMap<AnyRange<char>, BTreeSet<&Q>> {
+	) -> BTreeMap<AnyRange<T>, BTreeSet<&Q>> {
 		let mut map = RangeMap::new();
 
 		for q in states {
@@ -325,7 +361,10 @@ impl<Q: Ord> NFA<Q> {
 	}
 
 	/// Turns this NFA into a DFA.
-	pub fn determinize<'a, R>(&'a self, mut f: impl FnMut(&BTreeSet<&'a Q>) -> R) -> DFA<R>
+	pub fn determinize<'a, R>(
+		&'a self,
+		mut f: impl FnMut(&BTreeSet<&'a Q>) -> R,
+	) -> DFA<R, AnyRange<T>>
 	where
 		R: Clone + Ord + Hash,
 	{
@@ -365,7 +404,7 @@ impl<Q: Ord> NFA<Q> {
 
 	/// Adds the given `other` automaton to `self`, mapping the other automaton
 	/// states in the process.
-	pub fn mapped_union<R>(&mut self, other: NFA<R>, f: impl Fn(R) -> Q) {
+	pub fn mapped_union<R>(&mut self, other: NFA<R, T>, f: impl Fn(R) -> Q) {
 		for (q, transitions) in other.transitions {
 			let this_transitions = self.transitions.entry(f(q)).or_default();
 			for (label, targets) in transitions {
@@ -383,7 +422,7 @@ impl<Q: Ord> NFA<Q> {
 	}
 
 	/// Adds the given `other` automaton to `self`.
-	pub fn union<R>(&mut self, other: NFA<Q>) {
+	pub fn union<R>(&mut self, other: NFA<Q, T>) {
 		self.mapped_union(other, |q| q)
 	}
 
@@ -392,9 +431,9 @@ impl<Q: Ord> NFA<Q> {
 	/// The input function `f` computes the product between two states.
 	pub fn product<'a, 'b, R, S>(
 		&'a self,
-		other: &'b NFA<R>,
+		other: &'b NFA<R, T>,
 		mut f: impl FnMut(&'a Q, &'b R) -> S,
-	) -> NFA<S>
+	) -> NFA<S, T>
 	where
 		R: Ord,
 		S: Clone + Ord + Hash,
@@ -424,7 +463,7 @@ impl<Q: Ord> NFA<Q> {
 						Some(a_label) => {
 							for (b_label, b_successors) in other.successors(b) {
 								if let Some(b_label) = b_label {
-									let label = charset_intersection(a_label, b_label);
+									let label = token_set_intersection(a_label, b_label);
 									if !label.is_empty() {
 										let successors =
 											transitions.entry(Some(label)).or_default();
@@ -465,27 +504,27 @@ impl<Q: Ord> NFA<Q> {
 }
 
 /// Iterator over the successors of a given state in a [`NFA`].
-pub struct Successors<'a, Q> {
-	inner: Option<std::collections::btree_map::Iter<'a, Option<RangeSet<char>>, BTreeSet<Q>>>,
+pub struct Successors<'a, T, Q> {
+	inner: Option<std::collections::btree_map::Iter<'a, Option<RangeSet<T>>, BTreeSet<Q>>>,
 }
 
-impl<'a, Q> Successors<'a, Q> {
-	pub fn new(map: Option<&'a BTreeMap<Option<RangeSet<char>>, BTreeSet<Q>>>) -> Self {
+impl<'a, T, Q> Successors<'a, T, Q> {
+	pub fn new(map: Option<&'a BTreeMap<Option<RangeSet<T>>, BTreeSet<Q>>>) -> Self {
 		Self {
 			inner: map.map(|map| map.iter()),
 		}
 	}
 }
 
-impl<'a, Q> Iterator for Successors<'a, Q> {
-	type Item = (&'a Option<RangeSet<char>>, &'a BTreeSet<Q>);
+impl<'a, T, Q> Iterator for Successors<'a, T, Q> {
+	type Item = (&'a Option<RangeSet<T>>, &'a BTreeSet<Q>);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		self.inner.as_mut().and_then(|inner| inner.next())
 	}
 }
 
-impl<Q: Ord + Hash> Automaton<char> for NFA<Q> {
+impl<T: Token, Q: Ord + Hash> Automaton<T> for NFA<Q, T> {
 	type State<'a> = VisitingState<'a, Q> where Self: 'a;
 
 	fn initial_state(&self) -> Option<Self::State<'_>> {
@@ -528,7 +567,7 @@ impl<Q: Ord + Hash> Automaton<char> for NFA<Q> {
 			mut next_states,
 			mut stack,
 		}: Self::State<'a>,
-		token: char,
+		token: T,
 	) -> Option<Self::State<'_>> {
 		for &q in &states {
 			if let Some(q_transitions) = self.transitions.get(q) {

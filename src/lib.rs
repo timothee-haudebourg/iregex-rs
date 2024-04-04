@@ -7,6 +7,7 @@
 //! expression library, please use the [`regex`] library.
 //!
 //! [`regex`]: <https://github.com/rust-lang/regex>
+use automata::Class;
 pub use iregex_automata as automata;
 
 mod ir;
@@ -15,19 +16,16 @@ pub use ir::*;
 mod compiled;
 pub use compiled::*;
 
-pub trait Token {
-	/// Returns the (byte) length of the token.
-	fn len(&self) -> usize;
+pub trait Boundary<T> {
+	type Class: Class<T>;
+
+	fn apply(&self, class: &Self::Class) -> Option<Self::Class>;
 }
 
-impl Token for u8 {
-	fn len(&self) -> usize {
-		1
-	}
-}
+impl<T> Boundary<T> for () {
+	type Class = ();
 
-impl Token for char {
-	fn len(&self) -> usize {
-		self.len_utf8()
+	fn apply(&self, _class: &Self::Class) -> Option<Self::Class> {
+		Some(())
 	}
 }

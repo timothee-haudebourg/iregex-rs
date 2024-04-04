@@ -1,12 +1,12 @@
-use std::ops::Range;
+use std::{fs, ops::Range};
 
-use iregex::{Alternation, Atom, Concatenation, IRegEx};
-use iregex_automata::{any_char, nfa::U32StateBuilder, RangeSet};
+use iregex::{Alternation, Atom, CompoundAutomaton, Concatenation, IRegEx};
+use iregex_automata::{any_char, dot::DotDisplay, nfa::U32StateBuilder, Map, RangeSet, NFA};
 
 #[test]
 fn no_matches_anchored() {
 	let vectors = [(
-		Atom::star(Atom::Token(['a', 'b', 'c'].into_iter().collect()).into()).into(),
+		Atom::<_, ()>::star(Atom::Token(['a', 'b', 'c'].into_iter().collect()).into()).into(),
 		"abcd",
 	)];
 
@@ -21,7 +21,7 @@ fn no_matches_anchored() {
 #[test]
 fn single_match_anchored() {
 	let vectors = [
-		(Concatenation::new().into(), ""),
+		(Concatenation::<_, ()>::new().into(), ""),
 		(Atom::Token(any_char()).into(), "a"),
 		(Atom::star(Atom::Token(any_char()).into()).into(), "abcd"),
 	];
@@ -81,10 +81,28 @@ fn many_matches_unanchored() {
 		),
 	];
 
-	for (root, haystack, expected) in vectors {
+	for (i, (root, haystack, expected)) in vectors.into_iter().enumerate() {
 		let ire = IRegEx::unanchored(root);
 		let aut = ire.compile(U32StateBuilder::default()).unwrap();
 		let matches: Vec<_> = aut.matches(haystack.chars()).collect();
+
+		if matches != expected {
+			write_compound_automaton(format!("many_matches_unanchored_{i}"), &aut);
+		}
+
 		assert_eq!(matches, expected);
 	}
+}
+
+fn write_compound_automaton(basename: String, aut: &CompoundAutomaton) {
+	write_automaton(format!("{basename}_prefix.dot"), &aut.prefix);
+	write_automaton(format!("{basename}_root.dot"), &aut.root.get(&()).unwrap());
+	write_automaton(
+		format!("{basename}_suffix.dot"),
+		&aut.suffix.get(&()).unwrap(),
+	);
+}
+
+fn write_automaton(path: String, aut: &NFA) {
+	fs::write(&path, aut.dot().to_string()).unwrap();
 }

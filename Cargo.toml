@@ -29,3 +29,6 @@ thiserror = "1.0.57"
 
 [dependencies]
 iregex-automata.workspace = true
+
+[dev-dependencies]
+iregex-automata = { workspace = true, features = ["dot"] }

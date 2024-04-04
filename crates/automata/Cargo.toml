@@ -12,6 +12,11 @@ edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+dot = []
+
 [dependencies]
 thiserror.workspace = true
 btree-range-map = "0.7.2"
+range-traits = "0.3.2"
+mown = "1.0"
