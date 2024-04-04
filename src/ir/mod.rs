@@ -1,7 +1,8 @@
-mod atom;
-
 use std::hash::Hash;
 
+mod boundary;
+pub use boundary::*;
+mod atom;
 pub use atom::*;
 mod concatenation;
 pub use concatenation::*;
@@ -14,7 +15,7 @@ use iregex_automata::{
 	Class, Map, MapSource, Token, NFA,
 };
 
-use crate::{Boundary, CompoundAutomaton};
+use crate::CompoundAutomaton;
 
 /// Intermediate Regular Expression.
 pub struct IRegEx<T = char, B = ()> {

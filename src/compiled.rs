@@ -2,7 +2,7 @@ use std::{ops::Range, str::Chars};
 
 use iregex_automata::{Automaton, Class, Map, MapSource, RangeSet, Token, DFA, NFA};
 
-/// Compound automaton.
+/// Compound automaton, a compiled regular expression.
 pub struct CompoundAutomaton<A = NFA<u32, char>, C: MapSource = ()> {
 	pub prefix: A,
 	pub root: C::Map<A>,
