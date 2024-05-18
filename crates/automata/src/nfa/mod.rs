@@ -8,6 +8,9 @@ use crate::{dfa::DetTransitions, Automaton, Class, Map, Token, DFA};
 
 use super::token_set_intersection;
 
+mod tags;
+pub use tags::{Tags, TaggedNFA};
+
 #[derive(Debug)]
 pub struct TooManyStates;
 
@@ -37,6 +40,12 @@ pub struct U32StateBuilder<C> {
 	limit: u32,
 }
 
+impl<C> U32StateBuilder<C> {
+	pub fn new() -> Self {
+		Self::default()
+	}
+}
+
 impl<C> Default for U32StateBuilder<C> {
 	fn default() -> Self {
 		U32StateBuilder {
@@ -49,7 +58,11 @@ impl<C> Default for U32StateBuilder<C> {
 impl<T, C> StateBuilder<T, u32, C> for U32StateBuilder<C> {
 	type Error = TooManyStates;
 
-	fn next_state(&mut self, nfa: &mut NFA<u32, T>, class: C) -> Result<u32, Self::Error> {
+	fn next_state(
+		&mut self,
+		nfa: &mut NFA<u32, T>,
+		class: C
+	) -> Result<u32, Self::Error> {
 		let q = self.states.len() as u32;
 		self.states.push(class);
 		if self.states.len() as u32 > self.limit {
@@ -65,7 +78,7 @@ impl<T, C> StateBuilder<T, u32, C> for U32StateBuilder<C> {
 	}
 }
 
-pub trait BuildNFA<T = char, Q = u32, C = ()>
+pub trait BuildNFA<T = char, Q = u32, C = (), G = ()>
 where
 	T: Clone,
 	Q: Ord,
@@ -75,21 +88,23 @@ where
 		&self,
 		mut state_builder: S,
 		class: C,
-	) -> Result<NFA<Q, T>, S::Error> {
+	) -> Result<TaggedNFA<Q, T, G>, S::Error> {
 		let mut nfa = NFA::new();
-		let (a, bs) = self.build_nfa_from(&mut state_builder, &mut nfa, &class)?;
+		let mut tags = Tags::new();
+		let (a, bs) = self.build_nfa_from(&mut state_builder, &mut nfa, &mut tags, &class)?;
 		nfa.add_initial_state(a);
 		for (_, b) in bs.into_entries() {
 			nfa.add_final_state(b);
 		}
 
-		Ok(nfa)
+		Ok(TaggedNFA::new(nfa, tags))
 	}
 
 	fn build_nfa_from<S: StateBuilder<T, Q, C>>(
 		&self,
 		state_builder: &mut S,
 		nfa: &mut NFA<Q, T>,
+		tags: &mut Tags<Q, G>,
 		class: &C,
 	) -> Result<(Q, C::Map<Q>), S::Error>;
 }
@@ -251,43 +266,50 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 	///
 	/// Returns `None` if this automaton recognizes no string, or more than one
 	/// string.
-	pub fn to_singleton(&self) -> Option<Vec<T>> {
-		if self.initial_states.len() > 1 {
-			return None;
-		}
+	pub fn to_singleton(&self) -> Option<Vec<T>> where Q: Hash {
+		let mut q = Automaton::initial_state(self)?;
 
 		let mut result = Vec::new();
-
-		if let Some(mut q) = self.initial_states.first() {
-			while let Some(q_transitions) = self.transitions.get(q) {
-				if q_transitions.len() > 1 {
-					return None;
-				}
-
-				match q_transitions.first_key_value() {
-					Some((label, r)) => {
-						if r.len() > 1 {
-							return None;
-						}
-
-						match r.first() {
-							Some(r) => match label {
-								Some(range) if T::is_one(range.len()) => {
-									let c = range.iter().next().unwrap().first().unwrap();
-									result.push(c);
-									q = r
-								}
-								_ => return None,
-							},
-							None => break,
+		loop {
+			if Automaton::is_final_state(self, &q) {
+				for label in q.labels(self) {
+					for range in label {
+						if range.first().is_some() {
+							return None
 						}
 					}
-					None => break,
+				}
+
+				break Some(result)
+			} else {
+				let mut token = None;
+
+				for label in q.labels(self) {
+					for range in label {
+						if let Some(t) = range.first() {
+							let last = range.last().unwrap();
+							if t != last {
+								return None
+							}
+
+							if let Some(u) = token.replace(t) {
+								if u != t {
+									return None
+								}
+							}
+						}
+					}
+				}
+
+				match token {
+					Some(token) => {
+						q = Automaton::next_state(self, q, token)?;
+						result.push(token)
+					}
+					None => break None
 				}
 			}
 		}
-
-		Some(result)
 	}
 
 	fn modulo_epsilon_state<'a>(&'a self, qs: impl IntoIterator<Item = &'a Q>) -> BTreeSet<&'a Q> {
@@ -602,7 +624,6 @@ impl<T: Token, Q: Ord + Hash> Automaton<T> for NFA<Q, T> {
 			None
 		} else {
 			states.clear();
-			eprintln!("next is {} len", next_states.len());
 			Some(VisitingState {
 				states: next_states,
 				next_states: states,
@@ -626,4 +647,18 @@ pub struct VisitingState<'a, Q> {
 	states: HashSet<&'a Q>,
 	next_states: HashSet<&'a Q>,
 	stack: Vec<&'a Q>,
+}
+
+impl<'a, Q: Ord> VisitingState<'a, Q> {
+	pub fn labels<'b, T>(&'b self, aut: &'b NFA<Q, T>) -> impl 'b + Iterator<Item = &RangeSet<T>> {
+		self.states.iter().flat_map(|q| {
+			aut.transitions
+				.get(*q)
+				.map(|q_transitions| {
+					q_transitions.keys().map(Option::as_ref).flatten()
+				})
+				.into_iter()
+				.flatten()
+		})
+	}
 }

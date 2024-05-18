@@ -1,5 +1,5 @@
 use core::fmt;
-use iregex_automata::AnyRange;
+use iregex::automata::AnyRange;
 use std::fmt::Write;
 
 use crate::{Ast, Atom, Charset, Disjunction, Repeat, Sequence};
@@ -79,14 +79,23 @@ impl fmt::Display for Charset {
 
 impl fmt::Display for Repeat {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		if self.min == 0 && self.max == 1 {
+		if self.min == 0 && self.max == Some(1) {
 			f.write_char('?')
-		} else if self.min == 0 && self.max == u32::MAX {
+		} else if self.min == 0 && self.max.is_none() {
 			f.write_char('*')
-		} else if self.min == 1 && self.max == u32::MAX {
+		} else if self.min == 1 && self.max.is_some() {
 			f.write_char('+')
 		} else {
-			write!(f, "{{{},{}}}", self.min, self.max)
+			match self.max {
+				Some(max) => {
+					if self.min == max {
+						write!(f, "{{{}}}", self.min)
+					} else {
+						write!(f, "{{{},{}}}", self.min, max)
+					}
+				},
+				None => write!(f, "{{{},}}", self.min)
+			}
 		}
 	}
 }

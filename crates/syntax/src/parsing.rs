@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, iter::Peekable, ops::Bound, str::FromStr};
 
-use iregex_automata::{AnyRange, RangeSet};
+use iregex::automata::{AnyRange, RangeSet};
 
 use crate::{Ast, Atom, Charset, Class, Classes, Disjunction, Repeat, Sequence};
 
@@ -104,20 +104,20 @@ impl AtomOrRepeat {
 			Some('{') => Self::Repeat(Repeat::parse(chars)?),
 			Some('?') => {
 				chars.next();
-				Self::Repeat(Repeat { min: 0, max: 1 })
+				Self::Repeat(Repeat { min: 0, max: Some(1) })
 			}
 			Some('*') => {
 				chars.next();
 				Self::Repeat(Repeat {
 					min: 0,
-					max: u32::MAX,
+					max: None,
 				})
 			}
 			Some('+') => {
 				chars.next();
 				Self::Repeat(Repeat {
 					min: 1,
-					max: u32::MAX,
+					max: None,
 				})
 			}
 			Some('\\') => {
@@ -170,6 +170,15 @@ impl Disjunction {
 		}
 
 		Ok(Self(result))
+	}
+}
+
+impl FromStr for Disjunction {
+	type Err = Error;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let mut chars = s.chars().peekable();
+		Self::parse(&mut chars)
 	}
 }
 
@@ -366,15 +375,14 @@ impl Repeat {
 
 		parse_number(chars, |chars, value, next| match value {
 			Some(min) => match next {
-				',' => parse_number(chars, |_, value, next| {
+				',' => parse_number(chars, |_, max, next| {
 					if next == '}' {
-						let max = value.unwrap_or(u32::MAX);
 						Ok(Self { min, max })
 					} else {
 						Err(Error::Unexpected(Unexpected::Char(next)))
 					}
 				}),
-				'}' => Ok(Self { min, max: min }),
+				'}' => Ok(Self { min, max: Some(min) }),
 				c => Err(Error::Unexpected(Unexpected::Char(c))),
 			},
 			None => Err(Error::Unexpected(Unexpected::Char(next))),

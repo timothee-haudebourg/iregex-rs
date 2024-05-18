@@ -165,6 +165,12 @@ impl<T> Class<T> for () {
 
 pub struct Unmapped<T>(Option<T>);
 
+impl<T> Unmapped<T> {
+	pub fn unwrap(self) -> Option<T> {
+		self.0
+	}
+}
+
 impl<T> Default for Unmapped<T> {
 	fn default() -> Self {
 		Self(None)
@@ -241,4 +247,9 @@ pub trait Automaton<T> {
 	) -> Option<Self::State<'_>>;
 
 	fn is_final_state<'a>(&'a self, state: &Self::State<'a>) -> bool;
+}
+
+/// Deterministic or non-deterministic automaton.
+pub trait TaggedAutomaton<T, G>: Automaton<T> {
+	fn get_tag(&self, state: &G) -> Option<usize>;
 }

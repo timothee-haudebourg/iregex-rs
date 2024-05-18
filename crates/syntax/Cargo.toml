@@ -11,6 +11,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-iregex-automata.workspace = true
+iregex = { path = "../.." }
+# iregex-automata.workspace = true
 thiserror.workspace = true
 replace_with = "0.1.7"

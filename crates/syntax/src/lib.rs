@@ -4,7 +4,7 @@
 //! ([`char`] type) using the [`ere-automata`] library.
 //!
 //! [`ere-automata`]: <https://crates.io/crates/ere-automata>
-use iregex_automata::RangeSet;
+use iregex::automata::RangeSet;
 use replace_with::replace_with_or_abort;
 use std::ops::Deref;
 
@@ -13,6 +13,8 @@ pub use parsing::*;
 
 mod display;
 pub use display::*;
+
+mod build;
 
 /// Abstract syntax tree of an Extended Regular Expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -107,6 +109,12 @@ impl IntoIterator for Disjunction {
 	}
 }
 
+impl From<Sequence> for Disjunction {
+	fn from(value: Sequence) -> Self {
+		Self(vec![value])
+	}
+}
+
 /// Regular expression atom sequence.
 #[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Sequence(Vec<Atom>);
@@ -119,6 +127,10 @@ impl Sequence {
 	pub fn push(&mut self, atom: Atom) {
 		self.0.push(atom)
 	}
+
+	pub fn into_disjunction(self) -> Disjunction {
+		self.into()
+	}
 }
 
 impl Deref for Sequence {
@@ -126,6 +138,12 @@ impl Deref for Sequence {
 
 	fn deref(&self) -> &Self::Target {
 		self.0.as_slice()
+	}
+}
+
+impl FromIterator<Atom> for Sequence {
+	fn from_iter<T: IntoIterator<Item = Atom>>(iter: T) -> Self {
+		Self(Vec::from_iter(iter))
 	}
 }
 
@@ -182,6 +200,16 @@ pub struct Charset {
 	set: RangeSet<char>,
 }
 
+impl From<RangeSet<char>> for Charset {
+	fn from(value: RangeSet<char>) -> Self {
+		Self {
+			negative: false,
+			classes: Classes::none(),
+			set: value
+		}
+	}
+}
+
 macro_rules! classes {
 	($($id:ident: $name:literal ($flag:ident: $flag_value:literal)),*) => {
 		$(const $flag: u16 = $flag_value;)*
@@ -231,6 +259,10 @@ macro_rules! classes {
 			pub fn insert(&mut self, c: Class) {
 				self.0 |= c.flag()
 			}
+
+			pub fn iter(&self) -> ClassesIter {
+				ClassesIter(self.0)
+			}
 		}
 
 		pub struct ClassesIter(u16);
@@ -252,6 +284,24 @@ macro_rules! classes {
 	};
 }
 
+impl IntoIterator for Classes {
+	type IntoIter = ClassesIter;
+	type Item = Class;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.iter()
+	}
+}
+
+impl<'a> IntoIterator for &'a Classes {
+	type IntoIter = ClassesIter;
+	type Item = Class;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.iter()
+	}
+}
+
 classes! {
 	Upper:  "upper"  (CLASS_UPPER:  0b0000000000001),
 	Lower:  "lower"  (CLASS_LOWER:  0b0000000000010),
@@ -270,5 +320,5 @@ classes! {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Repeat {
 	pub min: u32,
-	pub max: u32,
+	pub max: Option<u32>,
 }

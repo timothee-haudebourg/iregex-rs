@@ -1,16 +1,16 @@
 use std::hash::Hash;
 
 use iregex_automata::{
-	nfa::{BuildNFA, StateBuilder},
+	nfa::{BuildNFA, StateBuilder, Tags},
 	Class, Map, RangeSet, Token, NFA,
 };
 
-use crate::Boundary;
+use crate::{Boundary, CaptureTag};
 
 use super::{Alternation, CaptureGroupId, Repeat};
 
 #[derive(Debug, Clone)]
-pub enum Atom<T, B> {
+pub enum Atom<T = char, B = ()> {
 	/// Boundary.
 	Boundary(B),
 
@@ -34,7 +34,7 @@ impl<T, B> Atom<T, B> {
 	}
 }
 
-impl<T, B, Q, C> BuildNFA<T, Q, C> for Atom<T, B>
+impl<T, B, Q, C> BuildNFA<T, Q, C, CaptureTag> for Atom<T, B>
 where
 	T: Token,
 	B: Boundary<T, Class = C>,
@@ -45,6 +45,7 @@ where
 		&self,
 		state_builder: &mut S,
 		nfa: &mut NFA<Q, T>,
+		tags: &mut Tags<Q, CaptureTag>,
 		class: &B::Class,
 	) -> Result<(Q, C::Map<Q>), S::Error> {
 		match self {
@@ -68,8 +69,8 @@ where
 
 				Ok((a, output))
 			}
-			Self::Repeat(alt, r) => r.build_nfa_for(alt, state_builder, nfa, class),
-			Self::Capture(_, alt) => alt.build_nfa_from(state_builder, nfa, class),
+			Self::Repeat(alt, r) => r.build_nfa_for(alt, state_builder, nfa, tags, class),
+			Self::Capture(_, alt) => alt.build_nfa_from(state_builder, nfa, tags, class),
 		}
 	}
 }

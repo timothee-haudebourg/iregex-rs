@@ -11,7 +11,7 @@ pub use alternation::*;
 mod affix;
 pub use affix::*;
 use iregex_automata::{
-	nfa::{BuildNFA, StateBuilder},
+	nfa::{BuildNFA, StateBuilder, TaggedNFA, Tags},
 	Class, Map, MapSource, Token, NFA,
 };
 
@@ -41,6 +41,22 @@ impl<T, B> IRegEx<T, B> {
 		}
 	}
 
+	pub fn into_anchored(self) -> Result<Alternation<T, B>, Self> {
+		if self.prefix.is_anchor() && self.suffix.is_anchor() {
+			Ok(self.root)
+		} else {
+			Err(self)
+		}
+	}
+
+	pub fn into_unanchored(self) -> Result<Alternation<T, B>, Self> {
+		if self.prefix.is_any() && self.suffix.is_any() {
+			Ok(self.root)
+		} else {
+			Err(self)
+		}
+	}
+
 	/// Compiles the regular expression.
 	pub fn compile<Q, S>(&self, mut state_builder: S) -> Result<CompiledRegEx<T, B, Q>, S::Error>
 	where
@@ -54,7 +70,7 @@ impl<T, B> IRegEx<T, B> {
 			.prefix
 			.build_nfa(&mut state_builder, Default::default())?;
 
-		let mut root: <B::Class as MapSource>::Map<NFA<Q, T>> = Default::default();
+		let mut root: <B::Class as MapSource>::Map<TaggedNFA<Q, T, CaptureTag>> = Default::default();
 		for q in prefix.final_states() {
 			let q_class = state_builder.class_of(q).unwrap().clone();
 			root.get_or_try_insert_with(&q_class, || {
@@ -62,7 +78,7 @@ impl<T, B> IRegEx<T, B> {
 			})?;
 		}
 
-		let mut suffix: <B::Class as MapSource>::Map<NFA<Q, T>> = Default::default();
+		let mut suffix: <B::Class as MapSource>::Map<TaggedNFA<Q, T, CaptureTag>> = Default::default();
 		for (_, aut) in root.iter() {
 			for q in aut.final_states() {
 				let q_class = state_builder.class_of(q).unwrap().clone();
@@ -80,11 +96,16 @@ impl<T, B> IRegEx<T, B> {
 	}
 }
 
-pub type CompiledRegEx<T, B, Q> = CompoundAutomaton<NFA<Q, T>, <B as Boundary<T>>::Class>;
+pub type CompiledRegEx<T, B, Q> = CompoundAutomaton<TaggedNFA<Q, T, CaptureTag>, <B as Boundary<T>>::Class>;
 
 /// Capture group identifier.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CaptureGroupId(pub u32);
+
+pub enum CaptureTag {
+	Begin(CaptureGroupId),
+	End(CaptureGroupId)
+}
 
 /// Repetition.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -121,11 +142,12 @@ impl Repeat {
 		}
 	}
 
-	pub fn build_nfa_for<T, Q, C, S>(
+	pub fn build_nfa_for<T, Q, C, G, S>(
 		self,
-		value: &impl BuildNFA<T, Q, C>,
+		value: &impl BuildNFA<T, Q, C, G>,
 		state_builder: &mut S,
 		nfa: &mut NFA<Q, T>,
+		tags: &mut Tags<Q, G>,
 		class: &C,
 	) -> Result<(Q, C::Map<Q>), S::Error>
 	where
@@ -138,9 +160,9 @@ impl Repeat {
 			let a = state_builder.next_state(nfa, class.clone())?;
 			Ok((a, Map::singleton(class.clone(), a)))
 		} else if self.is_one() {
-			value.build_nfa_from(state_builder, nfa, class)
+			value.build_nfa_from(state_builder, nfa, tags, class)
 		} else if self.min > 0 {
-			let (a, bs) = value.build_nfa_from(state_builder, nfa, class)?;
+			let (a, bs) = value.build_nfa_from(state_builder, nfa, tags, class)?;
 
 			let mut output = ClassConcatenation::default();
 
@@ -149,7 +171,7 @@ impl Repeat {
 					min: self.min - 1,
 					max: self.max.map(|max| max - 1),
 				}
-				.build_nfa_for(value, state_builder, nfa, &b_class)?;
+				.build_nfa_for(value, state_builder, nfa, tags, &b_class)?;
 				nfa.add(b, None, c);
 
 				for (_, d) in ds.into_entries() {
@@ -171,7 +193,7 @@ impl Repeat {
 						min: 0,
 						max: Some(max - 1),
 					}
-					.build_nfa_for(value, state_builder, nfa, class)?;
+					.build_nfa_for(value, state_builder, nfa, tags, class)?;
 
 					nfa.add(a, None, c);
 					for (d_class, d) in ds.into_entries() {
@@ -183,7 +205,7 @@ impl Repeat {
 				}
 				None => {
 					let mut map: C::Map<Q> = Default::default();
-					let q = kleene_star_closure(&mut map, value, state_builder, nfa, class)?;
+					let q = kleene_star_closure(&mut map, value, state_builder, nfa, tags, class)?;
 					Ok((q, map))
 				}
 			}
@@ -191,11 +213,12 @@ impl Repeat {
 	}
 }
 
-fn kleene_star_closure<T, Q, C, S: StateBuilder<T, Q, C>>(
+fn kleene_star_closure<T, Q, C, G, S: StateBuilder<T, Q, C>>(
 	map: &mut C::Map<Q>,
-	value: &impl BuildNFA<T, Q, C>,
+	value: &impl BuildNFA<T, Q, C, G>,
 	state_builder: &mut S,
 	nfa: &mut NFA<Q, T>,
+	tags: &mut Tags<Q, G>,
 	class: &C,
 ) -> Result<Q, S::Error>
 where
@@ -210,11 +233,11 @@ where
 			map.set(class.clone(), q);
 			nfa.add(q, None, q);
 
-			let (a, bs) = value.build_nfa_from(state_builder, nfa, class)?;
+			let (a, bs) = value.build_nfa_from(state_builder, nfa, tags, class)?;
 			nfa.add(q, None, a);
 
 			for (b_class, b) in bs.into_entries() {
-				let target = kleene_star_closure(map, value, state_builder, nfa, &b_class)?;
+				let target = kleene_star_closure(map, value, state_builder, nfa, tags, &b_class)?;
 				nfa.add(b, None, target);
 			}
 

@@ -1,9 +1,11 @@
 use std::{ops::Range, str::Chars};
 
-use iregex_automata::{Automaton, Class, Map, MapSource, RangeSet, Token, DFA, NFA};
+use iregex_automata::{nfa::TaggedNFA, Automaton, Class, Map, MapSource, RangeSet, Token, DFA, NFA};
+
+use crate::CaptureTag;
 
 /// Compound automaton, a compiled regular expression.
-pub struct CompoundAutomaton<A = NFA<u32, char>, C: MapSource = ()> {
+pub struct CompoundAutomaton<A = TaggedNFA<u32, char, CaptureTag>, C: MapSource = ()> {
 	pub prefix: A,
 	pub root: C::Map<A>,
 	pub suffix: C::Map<A>,

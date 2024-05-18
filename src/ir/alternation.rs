@@ -1,11 +1,11 @@
 use std::{hash::Hash, ops::Deref};
 
 use iregex_automata::{
-	nfa::{BuildNFA, StateBuilder},
+	nfa::{BuildNFA, StateBuilder, Tags},
 	Class, Map, Token, NFA,
 };
 
-use crate::{Atom, Boundary, Concatenation};
+use crate::{Atom, Boundary, CaptureTag, Concatenation};
 
 /// Regular expression sequence disjunction.
 #[derive(Debug, Clone)]
@@ -67,7 +67,7 @@ impl<T, B> FromIterator<Concatenation<T, B>> for Alternation<T, B> {
 	}
 }
 
-impl<T, B, Q, C> BuildNFA<T, Q, C> for Alternation<T, B>
+impl<T, B, Q, C> BuildNFA<T, Q, C, CaptureTag> for Alternation<T, B>
 where
 	T: Token,
 	B: Boundary<T, Class = C>,
@@ -78,6 +78,7 @@ where
 		&self,
 		state_builder: &mut S,
 		nfa: &mut NFA<Q, T>,
+		tags: &mut Tags<Q, CaptureTag>,
 		class: &C,
 	) -> Result<(Q, C::Map<Q>), S::Error> {
 		match self.0.as_slice() {
@@ -85,7 +86,7 @@ where
 				let a = state_builder.next_state(nfa, class.clone())?;
 				Ok((a, Default::default()))
 			}
-			[concat] => concat.build_nfa_from(state_builder, nfa, class),
+			[concat] => concat.build_nfa_from(state_builder, nfa, tags, class),
 			list => {
 				let a = state_builder.next_state(nfa, class.clone())?;
 
@@ -94,7 +95,7 @@ where
 
 				for concat in list {
 					let (concat_a, concat_b_map) =
-						concat.build_nfa_from(state_builder, nfa, class)?;
+						concat.build_nfa_from(state_builder, nfa, tags, class)?;
 					nfa.add(a, None, concat_a);
 
 					for (b_class, concat_b) in concat_b_map.into_entries() {
