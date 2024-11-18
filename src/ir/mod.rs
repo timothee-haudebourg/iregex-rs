@@ -18,6 +18,7 @@ use iregex_automata::{
 use crate::CompoundAutomaton;
 
 /// Intermediate Regular Expression.
+#[derive(Debug)]
 pub struct IRegEx<T = char, B = ()> {
 	pub root: Alternation<T, B>,
 	pub prefix: Affix<T, B>,
@@ -70,7 +71,8 @@ impl<T, B> IRegEx<T, B> {
 			.prefix
 			.build_nfa(&mut state_builder, Default::default())?;
 
-		let mut root: <B::Class as MapSource>::Map<TaggedNFA<Q, T, CaptureTag>> = Default::default();
+		let mut root: <B::Class as MapSource>::Map<TaggedNFA<Q, T, CaptureTag>> =
+			Default::default();
 		for q in prefix.final_states() {
 			let q_class = state_builder.class_of(q).unwrap().clone();
 			root.get_or_try_insert_with(&q_class, || {
@@ -78,7 +80,8 @@ impl<T, B> IRegEx<T, B> {
 			})?;
 		}
 
-		let mut suffix: <B::Class as MapSource>::Map<TaggedNFA<Q, T, CaptureTag>> = Default::default();
+		let mut suffix: <B::Class as MapSource>::Map<TaggedNFA<Q, T, CaptureTag>> =
+			Default::default();
 		for (_, aut) in root.iter() {
 			for q in aut.final_states() {
 				let q_class = state_builder.class_of(q).unwrap().clone();
@@ -96,7 +99,8 @@ impl<T, B> IRegEx<T, B> {
 	}
 }
 
-pub type CompiledRegEx<T, B, Q> = CompoundAutomaton<TaggedNFA<Q, T, CaptureTag>, <B as Boundary<T>>::Class>;
+pub type CompiledRegEx<T, B, Q> =
+	CompoundAutomaton<TaggedNFA<Q, T, CaptureTag>, <B as Boundary<T>>::Class>;
 
 /// Capture group identifier.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -104,7 +108,7 @@ pub struct CaptureGroupId(pub u32);
 
 pub enum CaptureTag {
 	Begin(CaptureGroupId),
-	End(CaptureGroupId)
+	End(CaptureGroupId),
 }
 
 /// Repetition.
@@ -123,7 +127,7 @@ impl Repeat {
 
 	pub fn is_zero(&self) -> bool {
 		match self.max {
-			Some(max) => max <= self.min,
+			Some(max) => max < self.min,
 			None => false,
 		}
 	}
@@ -183,22 +187,43 @@ impl Repeat {
 		} else {
 			match self.max {
 				Some(max) => {
+					// initial state.
 					let a = state_builder.next_state(nfa, class.clone())?;
-					let b = state_builder.next_state(nfa, class.clone())?;
+
+					// intermediate state.
+					let (b, b_output) = value.build_nfa_from(state_builder, nfa, tags, class)?;
+
+					// final state.
+					let f = state_builder.next_state(nfa, class.clone())?;
+
+					// we can go from initial to intermediate.
 					nfa.add(a, None, b);
 
-					let mut output = ClassAlternation::singleton(class.clone(), b);
+					// we can go directly from initial to final.
+					nfa.add(a, None, f);
 
-					let (c, ds) = Self {
-						min: 0,
-						max: Some(max - 1),
-					}
-					.build_nfa_for(value, state_builder, nfa, tags, class)?;
+					let mut output = ClassAlternation::singleton(class.clone(), f);
 
-					nfa.add(a, None, c);
-					for (d_class, d) in ds.into_entries() {
-						let b = output.insert(state_builder, nfa, d_class)?;
-						nfa.add(d, None, b);
+					for (c_class, c) in b_output.into_entries() {
+						if max > 0 {
+							let (d, d_output) = Self {
+								min: 0,
+								max: Some(max - 1),
+							}
+							.build_nfa_for(value, state_builder, nfa, tags, &c_class)?;
+
+							nfa.add(c, None, d);
+
+							for (e_class, e) in d_output.into_entries() {
+								// connect to final.
+								let f = output.insert(state_builder, nfa, e_class)?;
+								nfa.add(e, None, f);
+							}
+						} else {
+							// connect to final.
+							let f = output.insert(state_builder, nfa, c_class)?;
+							nfa.add(c, None, f);
+						}
 					}
 
 					Ok((a, output.into_map()))

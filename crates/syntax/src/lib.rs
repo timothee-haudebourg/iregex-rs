@@ -205,7 +205,7 @@ impl From<RangeSet<char>> for Charset {
 		Self {
 			negative: false,
 			classes: Classes::none(),
-			set: value
+			set: value,
 		}
 	}
 }
@@ -321,4 +321,41 @@ classes! {
 pub struct Repeat {
 	pub min: u32,
 	pub max: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+	use iregex::automata::nfa::U32StateBuilder;
+
+	use crate::Ast;
+
+	#[test]
+	fn test1() {
+		let ast = Ast::parse("^#([^\n#][^\n]*)?$".chars()).unwrap();
+		let exp = ast.build();
+		let aut = exp.compile(U32StateBuilder::new()).unwrap();
+
+		assert!(aut.matches_str("#").next().is_some());
+		assert!(aut.matches_str("#a").next().is_some());
+		assert!(aut.matches_str("##").next().is_none());
+
+		// let aut = aut
+		// 	.root
+		// 	.unwrap()
+		// 	.unwrap();
+
+		// for &q in aut.states() {
+		// 	eprintln!("#{q}:");
+		// 	for (label, r) in aut.successors(&q) {
+		// 		match label {
+		// 			Some(set) => {
+		// 				eprintln!("\t{set:?} => {r:?}");
+		// 			}
+		// 			None => {
+		// 				eprintln!("\telse {r:?}")
+		// 			}
+		// 		}
+		// 	}
+		// }
+	}
 }

@@ -247,6 +247,22 @@ pub trait Automaton<T> {
 	) -> Option<Self::State<'_>>;
 
 	fn is_final_state<'a>(&'a self, state: &Self::State<'a>) -> bool;
+
+	fn contains(&self, tokens: impl IntoIterator<Item = T>) -> bool {
+		match self.initial_state() {
+			Some(mut q) => {
+				for token in tokens {
+					match self.next_state(q, token) {
+						Some(r) => q = r,
+						None => return false,
+					}
+				}
+
+				self.is_final_state(&q)
+			}
+			None => false,
+		}
+	}
 }
 
 /// Deterministic or non-deterministic automaton.

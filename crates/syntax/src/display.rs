@@ -93,8 +93,8 @@ impl fmt::Display for Repeat {
 					} else {
 						write!(f, "{{{},{}}}", self.min, max)
 					}
-				},
-				None => write!(f, "{{{},}}", self.min)
+				}
+				None => write!(f, "{{{},}}", self.min),
 			}
 		}
 	}

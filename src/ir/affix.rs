@@ -7,6 +7,7 @@ use iregex_automata::{
 
 use crate::{Alternation, Atom, Boundary, CaptureTag, Concatenation};
 
+#[derive(Debug)]
 pub enum Affix<T, B> {
 	Any,
 	Anchor,

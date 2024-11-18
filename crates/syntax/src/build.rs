@@ -17,7 +17,7 @@ impl Ast {
 				iregex::Affix::Anchor
 			} else {
 				iregex::Affix::Any
-			}
+			},
 		}
 	}
 }
@@ -41,7 +41,7 @@ impl Atom {
 			Self::Char(c) => iregex::Atom::Token(RangeSet::from_iter([*c])),
 			Self::Set(set) => iregex::Atom::Token(set.build()),
 			Self::Group(g) => iregex::Atom::alternation(g.build()),
-			Self::Repeat(atom, repeat) => iregex::Atom::Repeat(atom.build().into(), repeat.build())
+			Self::Repeat(atom, repeat) => iregex::Atom::Repeat(atom.build().into(), repeat.build()),
 		}
 	}
 }
@@ -49,7 +49,7 @@ impl Atom {
 impl Classes {
 	pub fn build(&self) -> iregex::automata::RangeSet<char> {
 		let mut result = iregex::automata::RangeSet::new();
-		
+
 		for c in self {
 			result.extend(c.build());
 		}
@@ -68,9 +68,9 @@ impl Charset {
 	pub fn build(&self) -> iregex::automata::RangeSet<char> {
 		let mut result = self.set.clone();
 		result.extend(self.classes.build());
-		
+
 		if self.negative {
-			return result.gaps().map(AnyRange::cloned).collect()
+			return result.gaps().map(AnyRange::cloned).collect();
 		} else {
 			result
 		}
@@ -79,6 +79,9 @@ impl Charset {
 
 impl Repeat {
 	pub fn build(&self) -> iregex::Repeat {
-		iregex::Repeat { min: self.min, max: self.max }
+		iregex::Repeat {
+			min: self.min,
+			max: self.max,
+		}
 	}
 }

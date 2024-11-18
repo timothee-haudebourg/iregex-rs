@@ -1,7 +1,10 @@
 use btree_range_map::{AnyRange, RangeMap, RangeSet};
+use educe::Educe;
+use range_traits::{Enum, Measure};
 use std::{
 	collections::{BTreeMap, BTreeSet, HashSet},
 	hash::Hash,
+	ops::Bound,
 };
 
 use crate::{dfa::DetTransitions, Automaton, Class, Map, Token, DFA};
@@ -9,7 +12,7 @@ use crate::{dfa::DetTransitions, Automaton, Class, Map, Token, DFA};
 use super::token_set_intersection;
 
 mod tags;
-pub use tags::{Tags, TaggedNFA};
+pub use tags::{TaggedNFA, Tags};
 
 #[derive(Debug)]
 pub struct TooManyStates;
@@ -58,11 +61,7 @@ impl<C> Default for U32StateBuilder<C> {
 impl<T, C> StateBuilder<T, u32, C> for U32StateBuilder<C> {
 	type Error = TooManyStates;
 
-	fn next_state(
-		&mut self,
-		nfa: &mut NFA<u32, T>,
-		class: C
-	) -> Result<u32, Self::Error> {
+	fn next_state(&mut self, nfa: &mut NFA<u32, T>, class: C) -> Result<u32, Self::Error> {
 		let q = self.states.len() as u32;
 		self.states.push(class);
 		if self.states.len() as u32 > self.limit {
@@ -113,7 +112,8 @@ where
 pub type Transitions<T, Q> = BTreeMap<Option<RangeSet<T>>, BTreeSet<Q>>;
 
 /// Nondeterministic finite automaton.
-#[derive(Debug)]
+#[derive(Debug, Clone, Educe)]
+#[educe(PartialEq(bound(Q: PartialEq, T: Measure + Enum)), Eq, PartialOrd, Ord, Hash)]
 pub struct NFA<Q = u32, T = char> {
 	transitions: BTreeMap<Q, Transitions<T, Q>>,
 	initial_states: BTreeSet<Q>,
@@ -191,6 +191,29 @@ impl<T, Q: Ord> NFA<Q, T> {
 }
 
 impl<T: Token, Q: Ord> NFA<Q, T> {
+	pub fn singleton(
+		list: impl IntoIterator<Item = T>,
+		mut next_state: impl FnMut(Option<usize>) -> Q,
+	) -> Self
+	where
+		Q: Clone,
+	{
+		let mut result = Self::new();
+
+		let mut q = next_state(None);
+		result.add_initial_state(q.clone());
+
+		for (i, item) in list.into_iter().enumerate() {
+			let r = next_state(Some(i));
+			let mut label = RangeSet::new();
+			label.insert(AnyRange::new(Bound::Included(item), Bound::Included(item)));
+			result.add(q, Some(label), r.clone());
+			q = r;
+		}
+
+		result
+	}
+
 	/// Adds the given transition to the automaton.
 	pub fn add(&mut self, source: Q, label: Option<RangeSet<T>>, target: Q)
 	where
@@ -266,7 +289,10 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 	///
 	/// Returns `None` if this automaton recognizes no string, or more than one
 	/// string.
-	pub fn to_singleton(&self) -> Option<Vec<T>> where Q: Hash {
+	pub fn to_singleton(&self) -> Option<Vec<T>>
+	where
+		Q: Hash,
+	{
 		let mut q = Automaton::initial_state(self)?;
 
 		let mut result = Vec::new();
@@ -275,12 +301,12 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 				for label in q.labels(self) {
 					for range in label {
 						if range.first().is_some() {
-							return None
+							return None;
 						}
 					}
 				}
 
-				break Some(result)
+				break Some(result);
 			} else {
 				let mut token = None;
 
@@ -289,12 +315,12 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 						if let Some(t) = range.first() {
 							let last = range.last().unwrap();
 							if t != last {
-								return None
+								return None;
 							}
 
 							if let Some(u) = token.replace(t) {
 								if u != t {
-									return None
+									return None;
 								}
 							}
 						}
@@ -306,7 +332,7 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 						q = Automaton::next_state(self, q, token)?;
 						result.push(token)
 					}
-					None => break None
+					None => break None,
 				}
 			}
 		}
@@ -654,9 +680,7 @@ impl<'a, Q: Ord> VisitingState<'a, Q> {
 		self.states.iter().flat_map(|q| {
 			aut.transitions
 				.get(*q)
-				.map(|q_transitions| {
-					q_transitions.keys().map(Option::as_ref).flatten()
-				})
+				.map(|q_transitions| q_transitions.keys().map(Option::as_ref).flatten())
 				.into_iter()
 				.flatten()
 		})

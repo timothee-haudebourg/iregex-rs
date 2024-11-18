@@ -26,6 +26,7 @@ members = ["crates/*"]
 iregex-automata = { version = "0.1.0", path = "crates/automata" }
 iregex-syntax = { version = "0.1.0", path = "crates/syntax" }
 thiserror = "1.0.57"
+educe = "0.6.0"
 
 [dependencies]
 iregex-automata.workspace = true

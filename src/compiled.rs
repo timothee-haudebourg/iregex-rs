@@ -1,6 +1,8 @@
 use std::{ops::Range, str::Chars};
 
-use iregex_automata::{nfa::TaggedNFA, Automaton, Class, Map, MapSource, RangeSet, Token, DFA, NFA};
+use iregex_automata::{
+	nfa::TaggedNFA, Automaton, Class, Map, MapSource, RangeSet, Token, DFA, NFA,
+};
 
 use crate::CaptureTag;
 

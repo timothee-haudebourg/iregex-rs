@@ -3,7 +3,7 @@
 //! Expression dialects. It also aims at providing easy tools to inspect finite
 //! automata built from regular expressions, or manually.
 //!
-//! If you are instead looking for a ready-to-use and feature-reach regular
+//! If you are instead looking for a ready-to-use and feature-rich regular
 //! expression library, please use the [`regex`] library.
 //!
 //! [`regex`]: <https://github.com/rust-lang/regex>

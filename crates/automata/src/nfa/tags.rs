@@ -1,4 +1,8 @@
-use std::{collections::{BTreeMap, BTreeSet}, hash::Hash, ops::Deref};
+use std::{
+	collections::{BTreeMap, BTreeSet},
+	hash::Hash,
+	ops::Deref,
+};
 
 use crate::{Automaton, Token, NFA};
 
@@ -31,18 +35,12 @@ impl<Q: Ord, T: Ord> Tags<Q, T> {
 
 pub struct TaggedNFA<Q, T, G> {
 	pub untagged: NFA<Q, T>,
-	pub tags: Tags<Q, G>
+	pub tags: Tags<Q, G>,
 }
 
 impl<Q, T, G> TaggedNFA<Q, T, G> {
-	pub fn new(
-		untagged: NFA<Q, T>,
-		tags: Tags<Q, G>
-	) -> Self {
-		Self {
-			untagged,
-			tags
-		}
+	pub fn new(untagged: NFA<Q, T>, tags: Tags<Q, G>) -> Self {
+		Self { untagged, tags }
 	}
 
 	pub fn into_untagged(self) -> NFA<Q, T> {
@@ -68,10 +66,10 @@ impl<Q: Ord + Hash, T: Token, G> Automaton<T> for TaggedNFA<Q, T, G> {
 	}
 
 	fn next_state<'a>(
-			&'a self,
-			current_state: Self::State<'a>,
-			token: T,
-		) -> Option<Self::State<'_>> {
+		&'a self,
+		current_state: Self::State<'a>,
+		token: T,
+	) -> Option<Self::State<'_>> {
 		Automaton::next_state(&self.untagged, current_state, token)
 	}
 

@@ -89,8 +89,6 @@ where
 			[concat] => concat.build_nfa_from(state_builder, nfa, tags, class),
 			list => {
 				let a = state_builder.next_state(nfa, class.clone())?;
-
-				// let b = state_builder.next_state(nfa)?;
 				let mut output: C::Map<Q> = Default::default();
 
 				for concat in list {

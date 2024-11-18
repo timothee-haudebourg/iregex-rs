@@ -104,21 +104,18 @@ impl AtomOrRepeat {
 			Some('{') => Self::Repeat(Repeat::parse(chars)?),
 			Some('?') => {
 				chars.next();
-				Self::Repeat(Repeat { min: 0, max: Some(1) })
+				Self::Repeat(Repeat {
+					min: 0,
+					max: Some(1),
+				})
 			}
 			Some('*') => {
 				chars.next();
-				Self::Repeat(Repeat {
-					min: 0,
-					max: None,
-				})
+				Self::Repeat(Repeat { min: 0, max: None })
 			}
 			Some('+') => {
 				chars.next();
-				Self::Repeat(Repeat {
-					min: 1,
-					max: None,
-				})
+				Self::Repeat(Repeat { min: 1, max: None })
 			}
 			Some('\\') => {
 				chars.next();
@@ -276,6 +273,7 @@ impl RangeOrClass {
 			Some('[') => {
 				return Ok(Some(Self::Class(Class::parse(chars)?)));
 			}
+			Some('\\') => parse_escaped_char(chars)?,
 			Some(c) => c,
 			None => return Err(Error::Unexpected(Unexpected::EndOfStream)),
 		};
@@ -285,6 +283,11 @@ impl RangeOrClass {
 				chars.next();
 				match chars.peek().copied() {
 					Some(']') => (start, true),
+					Some('\\') => {
+						chars.next();
+						let c = parse_escaped_char(chars)?;
+						(c, false)
+					}
 					Some(c) => {
 						chars.next();
 						(c, false)
@@ -382,7 +385,10 @@ impl Repeat {
 						Err(Error::Unexpected(Unexpected::Char(next)))
 					}
 				}),
-				'}' => Ok(Self { min, max: Some(min) }),
+				'}' => Ok(Self {
+					min,
+					max: Some(min),
+				}),
 				c => Err(Error::Unexpected(Unexpected::Char(c))),
 			},
 			None => Err(Error::Unexpected(Unexpected::Char(next))),
