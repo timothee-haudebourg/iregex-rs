@@ -680,7 +680,7 @@ impl<'a, Q: Ord> VisitingState<'a, Q> {
 		self.states.iter().flat_map(|q| {
 			aut.transitions
 				.get(*q)
-				.map(|q_transitions| q_transitions.keys().map(Option::as_ref).flatten())
+				.map(|q_transitions| q_transitions.keys().filter_map(Option::as_ref))
 				.into_iter()
 				.flatten()
 		})
