@@ -2,7 +2,7 @@
 name = "iregex-automata"
 description = "Finite automata definitions for the `iregex` crate."
 keywords = ["regex", "dfa", "automata", "automaton", "nfa"]
-categories = ["text-processing"]
+categories = ["text-processing", "data-structures", "algorithms"]
 readme = "README.md"
 documentation = "https://docs.rs/iregex-automata"
 authors.workspace = true

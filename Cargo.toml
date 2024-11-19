@@ -23,6 +23,7 @@ version = "0.1.0"
 members = ["crates/*"]
 
 [workspace.dependencies]
+iregex = { version = "0.1.0", path = "." }
 iregex-automata = { version = "0.1.0", path = "crates/automata" }
 iregex-syntax = { version = "0.1.0", path = "crates/syntax" }
 thiserror = "1.0.57"

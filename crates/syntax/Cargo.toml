@@ -1,6 +1,8 @@
 [package]
 name = "iregex-syntax"
 description = "Common syntax for regular expressions."
+keywords = ["regex"]
+categories = ["text-processing", "parsing"]
 readme = "README.md"
 documentation = "https://docs.rs/iregex-syntax"
 authors.workspace = true
@@ -11,7 +13,6 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-iregex = { path = "../.." }
-# iregex-automata.workspace = true
+iregex.workspace = true
 thiserror.workspace = true
 replace_with = "0.1.7"
