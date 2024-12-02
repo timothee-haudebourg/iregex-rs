@@ -13,6 +13,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [features]
+serde = ["dep:serde", "btree-range-map/serde"]
 dot = []
 
 [dependencies]
@@ -21,3 +22,4 @@ educe.workspace = true
 btree-range-map = "0.7.2"
 range-traits = "0.3.2"
 mown = "1.0"
+serde = { version = "1.0", features = ["derive"], optional = true }

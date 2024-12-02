@@ -11,21 +11,24 @@ edition.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+[features]
+serde = ["iregex-automata/serde"]
+
 [workspace.package]
 authors = ["Timothée Haudebourg <timothee@haudebourg.net>"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/timothee-haudebourg/iregex-rs"
 edition = "2021"
 rust-version = "1.66.1"
-version = "0.1.0"
+version = "0.1.1"
 
 [workspace]
 members = ["crates/*"]
 
 [workspace.dependencies]
-iregex = { version = "0.1.0", path = "." }
-iregex-automata = { version = "0.1.0", path = "crates/automata" }
-iregex-syntax = { version = "0.1.0", path = "crates/syntax" }
+iregex = { version = "0.1.1", path = "." }
+iregex-automata = { version = "0.1.1", path = "crates/automata" }
+iregex-syntax = { version = "0.1.1", path = "crates/syntax" }
 thiserror = "1.0.57"
 educe = "0.6.0"
 

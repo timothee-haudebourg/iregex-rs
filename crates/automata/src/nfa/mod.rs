@@ -114,6 +114,7 @@ pub type Transitions<T, Q> = BTreeMap<Option<RangeSet<T>>, BTreeSet<Q>>;
 /// Nondeterministic finite automaton.
 #[derive(Debug, Clone, Educe)]
 #[educe(PartialEq(bound(Q: PartialEq, T: Measure + Enum)), Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct NFA<Q = u32, T = char> {
 	transitions: BTreeMap<Q, Transitions<T, Q>>,
 	initial_states: BTreeSet<Q>,
@@ -548,6 +549,44 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 		}
 
 		result
+	}
+}
+
+#[cfg(feature = "serde")]
+impl<'de, Q, T> serde::Deserialize<'de> for NFA<Q, T>
+where
+	Q: Clone + Ord + serde::Deserialize<'de>,
+	T: Clone + Ord + Enum + Measure + serde::Deserialize<'de>,
+{
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: serde::Deserializer<'de>,
+	{
+		#[derive(serde::Deserialize)]
+		#[serde(
+			bound = "Q: serde::Deserialize<'de> + Ord, T: serde::Deserialize<'de> + Ord + Enum + Measure + Clone"
+		)]
+		pub struct Inner<Q, T> {
+			transitions: BTreeMap<Q, Transitions<T, Q>>,
+			initial_states: BTreeSet<Q>,
+			final_states: BTreeSet<Q>,
+		}
+
+		let mut inner: Inner<Q, T> = Inner::deserialize(deserializer)?;
+
+		for q in &inner.initial_states {
+			inner.transitions.entry(q.clone()).or_default();
+		}
+
+		for q in &inner.final_states {
+			inner.transitions.entry(q.clone()).or_default();
+		}
+
+		Ok(Self {
+			transitions: inner.transitions,
+			initial_states: inner.initial_states,
+			final_states: inner.final_states,
+		})
 	}
 }
 
