@@ -20,15 +20,15 @@ license = "MIT/Apache-2.0"
 repository = "https://github.com/timothee-haudebourg/iregex-rs"
 edition = "2021"
 rust-version = "1.66.1"
-version = "0.1.2"
+version = "0.1.3"
 
 [workspace]
 members = ["crates/*"]
 
 [workspace.dependencies]
-iregex = { version = "0.1.2", path = "." }
-iregex-automata = { version = "0.1.2", path = "crates/automata" }
-iregex-syntax = { version = "0.1.2", path = "crates/syntax" }
+iregex = { version = "0.1.3", path = "." }
+iregex-automata = { version = "0.1.3", path = "crates/automata" }
+iregex-syntax = { version = "0.1.3", path = "crates/syntax" }
 thiserror = "1.0.57"
 educe = "0.6.0"
 
