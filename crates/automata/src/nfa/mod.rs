@@ -360,7 +360,7 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 				return false;
 			}
 
-			stack.extend(self.successors(q).map(|(_, r)| r).flatten());
+			stack.extend(self.successors(q).flat_map(|(_, r)| r));
 		}
 
 		true
@@ -379,11 +379,11 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 		let mut visited = BTreeSet::new();
 		while let Some(q) = stack.pop() {
 			if visited.insert(q) {
-				if !predicate(&q) {
+				if !predicate(q) {
 					return false;
 				}
 
-				stack.extend(self.successors(q).map(|(_, r)| r).flatten());
+				stack.extend(self.successors(q).flat_map(|(_, r)| r));
 			}
 		}
 
