@@ -215,6 +215,17 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 		result
 	}
 
+	pub fn simple_loop(state: Q, label: RangeSet<T>) -> Self
+	where
+		Q: Clone,
+	{
+		let mut result = Self::new();
+		result.add(state.clone(), Some(label), state.clone());
+		result.add_initial_state(state.clone());
+		result.add_final_state(state);
+		result
+	}
+
 	/// Adds the given transition to the automaton.
 	pub fn add(&mut self, source: Q, label: Option<RangeSet<T>>, target: Q)
 	where
@@ -337,6 +348,95 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 				}
 			}
 		}
+	}
+
+	/// Checks if the language recognized by this automaton is finite.
+	pub fn is_finite(&self) -> bool {
+		let mut stack: Vec<&Q> = self.initial_states.iter().collect();
+
+		let mut visited = BTreeSet::new();
+		while let Some(q) = stack.pop() {
+			if !visited.insert(q) {
+				return false;
+			}
+
+			stack.extend(self.successors(q).map(|(_, r)| r).flatten());
+		}
+
+		true
+	}
+
+	/// Checks if the language recognized by this automaton is infinite.
+	pub fn is_infinite(&self) -> bool {
+		!self.is_finite()
+	}
+
+	/// Checks if every state reachable from any initial state satisfies the
+	/// given predicate.
+	pub fn is_always(&self, predicate: impl Fn(&Q) -> bool) -> bool {
+		let mut stack: Vec<&Q> = self.initial_states.iter().collect();
+
+		let mut visited = BTreeSet::new();
+		while let Some(q) = stack.pop() {
+			if visited.insert(q) {
+				if !predicate(&q) {
+					return false;
+				}
+
+				stack.extend(self.successors(q).map(|(_, r)| r).flatten());
+			}
+		}
+
+		true
+	}
+
+	/// Checks that for any length `n`, the set of states reachable by any word
+	/// of length `n` satisfies the given predicate.
+	pub fn is_always_concurrently(&self, predicate: impl Fn(&BTreeSet<&Q>) -> bool) -> bool {
+		let mut stack: Vec<BTreeSet<&Q>> = vec![self.initial_states.iter().collect()];
+
+		let mut visited = BTreeSet::new();
+		while let Some(state_set) = stack.pop() {
+			if visited.insert(state_set.clone()) {
+				if !predicate(&state_set) {
+					return false;
+				}
+
+				let successors = state_set.into_iter().flat_map(|q| {
+					self.successors(q)
+						.filter_map(|(label, r)| if label.is_some() { Some(r) } else { None })
+						.flatten()
+				});
+
+				stack.push(self.modulo_epsilon_state(successors));
+			}
+		}
+
+		true
+	}
+
+	/// Checks iff the language of this automaton is all the words made up of
+	/// the given alphabet.
+	pub fn is_universal(&self, alphabet: RangeSet<T>) -> bool {
+		self.is_always_concurrently(|states| {
+			let mut set = RangeSet::new();
+
+			for q in states {
+				for (l, _) in self.successors(q) {
+					if let Some(l) = l {
+						for &range in l {
+							set.insert(range);
+						}
+					}
+				}
+			}
+
+			set == alphabet
+		})
+	}
+
+	pub fn is_eventually(&self, predicate: impl Fn(&Q) -> bool) -> bool {
+		!self.is_always(|q| !predicate(q))
 	}
 
 	fn modulo_epsilon_state<'a>(&'a self, qs: impl IntoIterator<Item = &'a Q>) -> BTreeSet<&'a Q> {
@@ -723,5 +823,38 @@ impl<'a, Q: Ord> VisitingState<'a, Q> {
 				.into_iter()
 				.flatten()
 		})
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use btree_range_map::generic::RangeSet;
+
+	use super::NFA;
+	use crate::any_char;
+
+	#[test]
+	fn is_finite() {
+		let aut = NFA::singleton("foo".chars(), |q| q);
+		assert!(aut.is_finite())
+	}
+
+	#[test]
+	fn is_infinite() {
+		let aut = NFA::simple_loop(0, any_char());
+		assert!(aut.is_infinite())
+	}
+
+	#[test]
+	fn is_universal() {
+		let aut1 = NFA::simple_loop(0, any_char());
+		assert!(aut1.is_universal(any_char()));
+
+		let mut label = RangeSet::new();
+		label.insert('a');
+		assert!(!aut1.is_universal(label));
+
+		let aut2 = NFA::singleton("foo".chars(), |q| q);
+		assert!(!aut2.is_universal(any_char()))
 	}
 }

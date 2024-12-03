@@ -391,7 +391,7 @@ impl<Q: Ord, L: Ord> DFA<Q, L> {
 	/// # Example
 	///
 	/// ```
-	/// # use ere_automata::DFA;
+	/// # use iregex_automata::DFA;
 	/// # let dfa = DFA::new(0);
 	/// let _: DFA<_, String> = dfa.compress(|s: &mut String, c: &char| s.push(*c));
 	/// ```
