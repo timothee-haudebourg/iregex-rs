@@ -212,6 +212,8 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 			q = r;
 		}
 
+		result.add_final_state(q);
+
 		result
 	}
 
@@ -263,37 +265,57 @@ impl<T: Token, Q: Ord> NFA<Q, T> {
 	}
 
 	/// Checks if this automaton recognizes exactly one string.
-	pub fn is_singleton(&self) -> bool {
-		if self.initial_states.len() > 1 {
+	pub fn is_singleton(&self) -> bool
+	where
+		Q: Hash,
+	{
+		let Some(mut q) = Automaton::initial_state(self) else {
 			return false;
-		}
+		};
 
-		if let Some(mut q) = self.initial_states.first() {
-			while let Some(q_transitions) = self.transitions.get(q) {
-				if q_transitions.len() > 1 {
-					return false;
-				}
-
-				match q_transitions.first_key_value() {
-					Some((label, r)) => {
-						if r.len() > 1 {
+		loop {
+			if Automaton::is_final_state(self, &q) {
+				for label in q.labels(self) {
+					for range in label {
+						if range.first().is_some() {
 							return false;
 						}
+					}
+				}
 
-						match r.first() {
-							Some(r) => match label {
-								Some(range) if T::is_one(range.len()) => q = r,
-								_ => return false,
-							},
-							None => break,
+				break true;
+			} else {
+				let mut token = None;
+
+				for label in q.labels(self) {
+					for range in label {
+						if let Some(t) = range.first() {
+							let last = range.last().unwrap();
+							if t != last {
+								return false;
+							}
+
+							if let Some(u) = token.replace(t) {
+								if u != t {
+									return false;
+								}
+							}
 						}
 					}
-					None => break,
+				}
+
+				match token {
+					Some(token) => {
+						let Some(r) = Automaton::next_state(self, q, token) else {
+							return false;
+						};
+
+						q = r;
+					}
+					None => break false,
 				}
 			}
 		}
-
-		true
 	}
 
 	/// Returns the string recognized by this automaton if it is a singleton
